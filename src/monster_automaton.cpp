@@ -21,7 +21,6 @@
 #include "player.hpp"
 #include "magic/magic.hpp"
 #include "prng.hpp"
-#include "mod_tools.hpp"
 
 void initAutomaton(Entity* my, Stat* myStats)
 {
@@ -40,8 +39,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	}
 	if ( multiplayer != CLIENT && !MONSTER_INIT )
 	{
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-
 		if ( myStats != NULL )
 		{
 	        if (myStats->sex == FEMALE)
@@ -97,37 +94,37 @@ void initAutomaton(Entity* my, Stat* myStats)
 				myStats->EDITOR_ITEMS[ITEM_SLOT_CLOAK] = 1;
 			}
 			// apply random stat increases if set in stat_shared.cpp or editor
-			setRandomMonsterStats(myStats, rng);
+			setRandomMonsterStats(myStats);
 
 			// generate 6 items max, less if there are any forced items from boss variants
 			int customItemsToGenerate = ITEM_CUSTOM_SLOT_LIMIT;
 
 			// boss variants
-			//if ( rng.rand() % 50 || my->flags[USERFLAG2] )
+			//if ( local_rng.rand() % 50 || my->flags[USERFLAG2] )
 			//{
 			//	if ( strncmp(map.name, "Underworld", 10) )
 			//	{
-			//		switch ( rng.rand() % 10 )
+			//		switch ( local_rng.rand() % 10 )
 			//		{
 			//			case 0:
 			//			case 1:
-			//				//myStats->weapon = newItem(BRONZE_AXE, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, NULL);
+			//				//myStats->weapon = newItem(BRONZE_AXE, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, NULL);
 			//				break;
 			//			case 2:
 			//			case 3:
-			//				//myStats->weapon = newItem(BRONZE_SWORD, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, NULL);
+			//				//myStats->weapon = newItem(BRONZE_SWORD, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, NULL);
 			//				break;
 			//			case 4:
 			//			case 5:
-			//				//myStats->weapon = newItem(IRON_SPEAR, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, NULL);
+			//				//myStats->weapon = newItem(IRON_SPEAR, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, NULL);
 			//				break;
 			//			case 6:
 			//			case 7:
-			//				//myStats->weapon = newItem(IRON_AXE, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, NULL);
+			//				//myStats->weapon = newItem(IRON_AXE, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, NULL);
 			//				break;
 			//			case 8:
 			//			case 9:
-			//				//myStats->weapon = newItem(IRON_SWORD, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, NULL);
+			//				//myStats->weapon = newItem(IRON_SWORD, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, NULL);
 			//				break;
 			//		}
 			//	}
@@ -137,17 +134,17 @@ void initAutomaton(Entity* my, Stat* myStats)
 			//	myStats->HP = 100;
 			//	myStats->MAXHP = 100;
 			//	strcpy(myStats->name, "Funny Bones");
-			//	myStats->weapon = newItem(ARTIFACT_AXE, EXCELLENT, 1, 1, rng.rand(), true, NULL);
+			//	myStats->weapon = newItem(ARTIFACT_AXE, EXCELLENT, 1, 1, local_rng.rand(), true, NULL);
 			//	myStats->cloak = newItem(CLOAK_PROTECTION, WORN, 0, 1, 2, true, NULL);
 			//}
 
 			// random effects
 
 			// generates equipment and weapons if available from editor
-			createMonsterEquipment(myStats, rng);
+			createMonsterEquipment(myStats);
 
 			// create any custom inventory items from editor if available
-			createCustomInventory(myStats, customItemsToGenerate, rng);
+			createCustomInventory(myStats, customItemsToGenerate);
 
 			// count if any custom inventory items from editor
 			int customItems = countCustomItems(myStats); //max limit of 6 custom items per entity.
@@ -176,19 +173,19 @@ void initAutomaton(Entity* my, Stat* myStats)
 			{
 				if ( greaterMonster )
 				{
-					switch ( rng.rand() % 4 )
+					switch ( local_rng.rand() % 4 )
 					{
 						case 0:
-							myStats->weapon = newItem(MAGICSTAFF_LIGHTNING, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->weapon = newItem(MAGICSTAFF_LIGHTNING, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 1:
-							myStats->weapon = newItem(CRYSTAL_SPEAR, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->weapon = newItem(CRYSTAL_SPEAR, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 2:
-							myStats->weapon = newItem(SHORTBOW, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->weapon = newItem(SHORTBOW, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 3:
-							myStats->weapon = newItem(CROSSBOW, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->weapon = newItem(CROSSBOW, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						default:
 							break;
@@ -199,7 +196,7 @@ void initAutomaton(Entity* my, Stat* myStats)
 			//give helmet
 			if ( myStats->helmet == NULL && myStats->EDITOR_ITEMS[ITEM_SLOT_HELM] == 1 )
 			{
-				switch ( rng.rand() % 10 )
+				switch ( local_rng.rand() % 10 )
 				{
 					case 0:
 					case 1:
@@ -208,13 +205,13 @@ void initAutomaton(Entity* my, Stat* myStats)
 					case 4:
 						break;
 					case 5:
-						//myStats->helmet = newItem(LEATHER_HELM, DECREPIT, -1 + rng.rand() % 2, 1, 0, false, NULL);
+						//myStats->helmet = newItem(LEATHER_HELM, DECREPIT, -1 + local_rng.rand() % 2, 1, 0, false, NULL);
 						break;
 					case 6:
 					case 7:
 					case 8:
 					case 9:
-						//myStats->helmet = newItem(IRON_HELM, DECREPIT, -1 + rng.rand() % 2, 1, 0, false, NULL);
+						//myStats->helmet = newItem(IRON_HELM, DECREPIT, -1 + local_rng.rand() % 2, 1, 0, false, NULL);
 						break;
 				}
 			}
@@ -230,19 +227,19 @@ void initAutomaton(Entity* my, Stat* myStats)
 				{
 					if ( greaterMonster )
 					{
-						switch ( rng.rand() % 4 )
+						switch ( local_rng.rand() % 4 )
 						{
 							case 0:
-								myStats->shield = newItem(CRYSTAL_SHIELD, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+								myStats->shield = newItem(CRYSTAL_SHIELD, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 								break;
 							case 1:
-								myStats->shield = newItem(STEEL_SHIELD_RESISTANCE, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+								myStats->shield = newItem(STEEL_SHIELD_RESISTANCE, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 								break;
 							case 2:
-								myStats->shield = newItem(STEEL_SHIELD, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+								myStats->shield = newItem(STEEL_SHIELD, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 								break;
 							case 3:
-								myStats->shield = newItem(MIRROR_SHIELD, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+								myStats->shield = newItem(MIRROR_SHIELD, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 								break;
 							default:
 								break;
@@ -256,13 +253,13 @@ void initAutomaton(Entity* my, Stat* myStats)
 			{
 				if ( greaterMonster )
 				{
-					switch ( rng.rand() % 4 )
+					switch ( local_rng.rand() % 4 )
 					{
 						case 0:
 						case 1:
 						case 2:
 						case 3:
-							myStats->shoes = newItem(STEEL_BOOTS_LEVITATION, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->shoes = newItem(STEEL_BOOTS_LEVITATION, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						default:
 							break;
@@ -275,16 +272,16 @@ void initAutomaton(Entity* my, Stat* myStats)
 			{
 				if ( greaterMonster )
 				{
-					switch ( rng.rand() % 4 )
+					switch ( local_rng.rand() % 4 )
 					{
 						case 0:
-							myStats->cloak = newItem(CLOAK_MAGICREFLECTION, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->cloak = newItem(CLOAK_MAGICREFLECTION, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 1:
-							myStats->cloak = newItem(CLOAK_PROTECTION, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->cloak = newItem(CLOAK_PROTECTION, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 2:
-							myStats->cloak = newItem(CLOAK, EXCELLENT, -1 + rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
+							myStats->cloak = newItem(CLOAK, EXCELLENT, -1 + local_rng.rand() % 2, 1, MONSTER_ITEM_UNDROPPABLE_APPEARANCE, false, NULL);
 							break;
 						case 3:
 							break;
@@ -400,7 +397,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	entity->flags[NOUPDATE] = true;
 	entity->flags[INVISIBLE] = true;
 	//entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[AUTOMATON][6][0]; // 2.5
 	entity->focaly = limbs[AUTOMATON][6][1]; // 0
 	entity->focalz = limbs[AUTOMATON][6][2]; // 0
@@ -422,7 +418,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	entity->flags[NOUPDATE] = true;
 	entity->flags[INVISIBLE] = true;
 	//entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[AUTOMATON][7][0]; // 2
 	entity->focaly = limbs[AUTOMATON][7][1]; // 0
 	entity->focalz = limbs[AUTOMATON][7][2]; // 0
@@ -446,7 +441,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	entity->flags[NOUPDATE] = true;
 	entity->flags[INVISIBLE] = true;
 	//entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[AUTOMATON][8][0]; // 0
 	entity->focaly = limbs[AUTOMATON][8][1]; // 0
 	entity->focalz = limbs[AUTOMATON][8][2]; // 4
@@ -470,7 +464,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	entity->flags[NOUPDATE] = true;
 	entity->flags[INVISIBLE] = true;
 	//entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[AUTOMATON][9][0]; // 0
 	entity->focaly = limbs[AUTOMATON][9][1]; // 0
 	entity->focalz = limbs[AUTOMATON][9][2]; // -2
@@ -491,7 +484,6 @@ void initAutomaton(Entity* my, Stat* myStats)
 	entity->flags[NOUPDATE] = true;
 	entity->flags[INVISIBLE] = true;
 	//entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[AUTOMATON][10][0]; // 0
 	entity->focaly = limbs[AUTOMATON][10][1]; // 0
 	entity->focalz = limbs[AUTOMATON][10][2]; // .5
@@ -1256,7 +1248,7 @@ void automatonMoveBodyparts(Entity* my, Stat* myStats, double dist)
 				if ( multiplayer != CLIENT )
 				{
 					bool hasSteelHelm = false;
-					/*if ( myStats->helmet )
+					if ( myStats->helmet )
 					{
 						if ( myStats->helmet->type == STEEL_HELM
 							|| myStats->helmet->type == CRYSTAL_HELM
@@ -1264,7 +1256,7 @@ void automatonMoveBodyparts(Entity* my, Stat* myStats, double dist)
 						{
 							hasSteelHelm = true;
 						}
-					}*/
+					}
 					if ( myStats->mask == NULL || myStats->EFFECTS[EFF_INVISIBLE] || wearingring || hasSteelHelm ) //TODO: isInvisible()?
 					{
 						entity->flags[INVISIBLE] = true;
@@ -1319,11 +1311,6 @@ void automatonMoveBodyparts(Entity* my, Stat* myStats, double dist)
 					if ( entity->sprite == items[MASK_SHAMAN].index )
 					{
 						entity->roll = 0;
-						my->setHelmetLimbOffset(entity);
-						my->setHelmetLimbOffsetWithMask(helmet, entity);
-					}
-					else if ( EquipmentModelOffsets.modelOffsetExists(AUTOMATON, entity->sprite) )
-					{
 						my->setHelmetLimbOffset(entity);
 						my->setHelmetLimbOffsetWithMask(helmet, entity);
 					}
@@ -1533,7 +1520,7 @@ void Entity::automatonRecycleItem()
 		case 0:
 		case 1:
 		case 2:
-			type = itemTypeWithinGoldValue(WEAPON, minGoldValue, maxGoldValue, local_rng);
+			type = itemTypeWithinGoldValue(WEAPON, minGoldValue, maxGoldValue);
 			if ( type == GEM_ROCK )
 			{
 				// fall through, try again with next category
@@ -1548,7 +1535,7 @@ void Entity::automatonRecycleItem()
 		case 6:
 		case 7:
 		case 8:
-			type = itemTypeWithinGoldValue(ARMOR, minGoldValue, maxGoldValue, local_rng);
+			type = itemTypeWithinGoldValue(ARMOR, minGoldValue, maxGoldValue);
 			if ( type == GEM_ROCK )
 			{
 				// fall through, try again with next category
@@ -1558,7 +1545,7 @@ void Entity::automatonRecycleItem()
 				break;
 			}
 		case 9:
-			type = itemTypeWithinGoldValue(THROWN, minGoldValue, maxGoldValue, local_rng);
+			type = itemTypeWithinGoldValue(THROWN, minGoldValue, maxGoldValue);
 			break;
 		default:
 			break;

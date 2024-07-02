@@ -42,10 +42,6 @@ void LobbyLeaveCleanup(EOSFuncs::LobbyData_t& lobby)
 
 void EOS_CALL EOSFuncs::LoggingCallback(const EOS_LogMessage* log)
 {
-	if ( !strcmp(log->Category, "LogHttp") )
-	{
-		return;
-	}
 	printlog("[EOS Logging]: %s:%s", log->Category, log->Message);
 }
 
@@ -60,7 +56,7 @@ std::string EOSFuncs::getAuthToken()
 	if ( !AuthHandle
 		|| AccountManager.AccountAuthenticationStatus != EOS_EResult::EOS_Success )
 	{
-		//logInfo("Recieved cached auth token, unknown login status");
+		logInfo("Recieved cached auth token, unknown login status");
 		return AccountManager.authToken;
 	}
 
@@ -1669,9 +1665,6 @@ void EOSFuncs::LobbyData_t::setLobbyAttributesFromGame(HostUpdateLobbyTypes upda
 		LobbyAttributes.lobbyName = EOS.currentLobbyName;
 		LobbyAttributes.gameVersion = VERSION;
 		LobbyAttributes.isLobbyLoadingSavedGame = loadingsavegame;
-		LobbyAttributes.lobbyKey = loadinglobbykey;
-		LobbyAttributes.challengeLid = gameModeManager.currentSession.challengeRun.isActive() ?
-			gameModeManager.currentSession.challengeRun.lid : "";
 		LobbyAttributes.serverFlags = svFlags;
 		LobbyAttributes.numServerMods = Mods::numCurrentModsLoaded;
 		LobbyAttributes.modsDisableAchievements = Mods::disableSteamAchievements;
@@ -2105,28 +2098,17 @@ void EOSFuncs::joinLobby(LobbyData_t* lobby)
 		logError("joinLobby: attempting to join a lobby with a NULL owner: %s, aborting.", CurrentLobbyData.LobbyId.c_str());
 		errorOnJoin = true;
 	}
-	else if (lobby->LobbyAttributes.isLobbyLoadingSavedGame != loadingsavegame
-		|| lobby->LobbyAttributes.lobbyKey != loadinglobbykey )
+	else if (lobby->LobbyAttributes.isLobbyLoadingSavedGame != loadingsavegame)
 	{
 		// loading save game, but incorrect assertion from client side.
 		if (loadingsavegame == 0)
 		{
 			// try reload from your other savefiles since this didn't match the default savegameIndex.
 			bool foundSave = false;
-			int checkDLC = VALID_OK_CHARACTER;
 			for (int c = 0; c < SAVE_GAMES_MAX; ++c) {
 				auto info = getSaveGameInfo(false, c);
 				if (info.game_version != -1) {
-					if (info.gamekey == lobby->LobbyAttributes.isLobbyLoadingSavedGame && info.lobbykey == lobby->LobbyAttributes.lobbyKey) {
-						if ( info.player_num < info.players.size() )
-						{
-							checkDLC = info.players[info.player_num].isCharacterValidFromDLC();
-							if ( checkDLC != VALID_OK_CHARACTER )
-							{
-								foundSave = false;
-								break;
-							}
-						}
+					if (info.gamekey == lobby->LobbyAttributes.isLobbyLoadingSavedGame) {
 						savegameCurrentFileIndex = c;
 						foundSave = true;
 						break;
@@ -2134,14 +2116,8 @@ void EOSFuncs::joinLobby(LobbyData_t* lobby)
 				}
 			}
 
-			if ( checkDLC != VALID_OK_CHARACTER )
-			{
-				ConnectingToLobbyStatus = LobbyHandler_t::EResult_LobbyFailures::LOBBY_SAVEGAME_REQUIRES_DLC;
-				errorOnJoin = true;
-			}
-			else if (foundSave) {
+			if (foundSave) {
 				loadingsavegame = lobby->LobbyAttributes.isLobbyLoadingSavedGame;
-				loadinglobbykey = lobby->LobbyAttributes.lobbyKey;
 				auto info = getSaveGameInfo(false, savegameCurrentFileIndex);
 				for (int c = 0; c < MAXPLAYERS; ++c) {
 					if (info.players_connected[c]) {
@@ -2160,8 +2136,7 @@ void EOSFuncs::joinLobby(LobbyData_t* lobby)
 			ConnectingToLobbyStatus = LobbyHandler_t::EResult_LobbyFailures::LOBBY_NOT_USING_SAVEGAME;
 			errorOnJoin = true;
 		}
-		else if ( (loadingsavegame > 0 && lobby->LobbyAttributes.isLobbyLoadingSavedGame > 0)
-			|| (loadinglobbykey > 0 && lobby->LobbyAttributes.lobbyKey > 0) )
+		else if (loadingsavegame > 0 && lobby->LobbyAttributes.isLobbyLoadingSavedGame > 0)
 		{
 			ConnectingToLobbyStatus = LobbyHandler_t::EResult_LobbyFailures::LOBBY_WRONG_SAVEGAME;
 			errorOnJoin = true;
@@ -2652,14 +2627,6 @@ std::pair<std::string, std::string> EOSFuncs::LobbyData_t::getAttributePair(Attr
 		attributePair.first = "LOADINGSAVEGAME";
 		attributePair.second = std::to_string(this->LobbyAttributes.isLobbyLoadingSavedGame);
 		break;
-	case LOBBY_KEY:
-		attributePair.first = "LOADINGLOBBYKEY";
-		attributePair.second = std::to_string(this->LobbyAttributes.lobbyKey);
-		break;
-	case CHALLENGE_LID:
-		attributePair.first = "CHALLENGELID";
-		attributePair.second = this->LobbyAttributes.challengeLid;
-		break;
 	case GAME_MODS:
 		attributePair.first = "SVNUMMODS";
 		attributePair.second = std::to_string(this->LobbyAttributes.numServerMods);
@@ -2718,14 +2685,6 @@ void EOSFuncs::LobbyData_t::setLobbyAttributesAfterReading(EOS_Lobby_AttributeDa
 	else if (keyName.compare("LOADINGSAVEGAME") == 0)
 	{
 		this->LobbyAttributes.isLobbyLoadingSavedGame = std::stoul(data->Value.AsUtf8);
-	}
-	else if ( keyName.compare("LOADINGLOBBYKEY") == 0 )
-	{
-		this->LobbyAttributes.lobbyKey = std::stoul(data->Value.AsUtf8);
-	}
-	else if ( keyName.compare("CHALLENGELID") == 0 )
-	{
-		this->LobbyAttributes.challengeLid = data->Value.AsUtf8;
 	}
 	else if (keyName.compare("SVNUMMODS") == 0)
 	{

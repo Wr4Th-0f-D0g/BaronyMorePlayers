@@ -45,8 +45,6 @@ void initScarab(Entity* my, Stat* myStats)
 	}
 	if ( multiplayer != CLIENT && !MONSTER_INIT )
 	{
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-
 		if ( myStats != NULL )
 		{
 		    if ( !strncmp(map.name, "The Labyrinth", 13) )
@@ -60,14 +58,14 @@ void initScarab(Entity* my, Stat* myStats)
 			}
 
 			// apply random stat increases if set in stat_shared.cpp or editor
-			setRandomMonsterStats(myStats, rng);
+			setRandomMonsterStats(myStats);
 
 			// generate 6 items max, less if there are any forced items from boss variants
 			int customItemsToGenerate = ITEM_CUSTOM_SLOT_LIMIT;
 
 			// boss variants
 			const bool boss =
-			    rng.rand() % 50 == 0 &&
+			    local_rng.rand() % 50 == 0 &&
 			    !my->flags[USERFLAG2] &&
 			    !myStats->MISC_FLAGS[STAT_FLAG_DISABLE_MINIBOSS];
 			if ( (boss || (*cvar_summonBosses && conductGameChallenges[CONDUCT_CHEATS_ENABLED])) && myStats->leader_uid == 0 )
@@ -103,17 +101,16 @@ void initScarab(Entity* my, Stat* myStats)
 						{
 							followerStats->leader_uid = entity->parent;
 						}
-						entity->seedEntityRNG(rng.getU32());
 					}
 				}
 			}
 			// random effects
 
 			// generates equipment and weapons if available from editor
-			createMonsterEquipment(myStats, rng);
+			createMonsterEquipment(myStats);
 
 			// create any custom inventory items from editor if available
-			createCustomInventory(myStats, customItemsToGenerate, rng);
+			createCustomInventory(myStats, customItemsToGenerate);
 
 			// count if any custom inventory items from editor
 			int customItems = countCustomItems(myStats); //max limit of 6 custom items per entity.
@@ -141,16 +138,16 @@ void initScarab(Entity* my, Stat* myStats)
 				case 3:
 				case 2:
 				case 1:
-					if ( rng.rand() % 2 || playerCount > 1 )
+					if ( local_rng.rand() % 2 || playerCount > 1 )
 					{
-						if ( rng.rand() % 3 > 0 )
+						if ( local_rng.rand() % 3 > 0 )
 						{
-							newItem(FOOD_TOMALLEY, static_cast<Status>(DECREPIT + rng.rand() % 4), 0, 1, rng.rand(), false, &myStats->inventory);
+							newItem(FOOD_TOMALLEY, static_cast<Status>(DECREPIT + local_rng.rand() % 4), 0, 1, local_rng.rand(), false, &myStats->inventory);
 						}
 						else
 						{
 							ItemType gem = GEM_GLASS;
-							switch( rng.rand() % 7 )
+							switch( local_rng.rand() % 7 )
 							{
 								case 0:
 									gem = GEM_OPAL;
@@ -174,11 +171,11 @@ void initScarab(Entity* my, Stat* myStats)
 									gem = GEM_GLASS;
 									break;
 							}
-							newItem(gem, static_cast<Status>(DECREPIT + rng.rand()%2), (rng.rand()%4 == 0), 1, rng.rand(), false, &myStats->inventory);
+							newItem(gem, static_cast<Status>(DECREPIT + local_rng.rand()%2), (local_rng.rand()%4 == 0), 1, local_rng.rand(), false, &myStats->inventory);
 						}
 						if ( playerCount > 2 )
 						{
-							newItem(FOOD_TOMALLEY, static_cast<Status>(DECREPIT + rng.rand() % 4), 0, 1 + rng.rand() % 2, rng.rand(), false, &myStats->inventory);
+							newItem(FOOD_TOMALLEY, static_cast<Status>(DECREPIT + local_rng.rand() % 4), 0, 1 + local_rng.rand() % 2, local_rng.rand(), false, &myStats->inventory);
 						}
 					}
 					break;

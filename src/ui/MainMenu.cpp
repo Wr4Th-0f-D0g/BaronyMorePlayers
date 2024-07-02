@@ -9,6 +9,8 @@
 
 #include "../init.hpp"
 #include "../net.hpp"
+#include "../game.hpp"
+#include "../main.hpp"
 #include "../player.hpp"
 #include "../stat.hpp"
 #include "../menu.hpp"
@@ -24,14 +26,14 @@
 #include "../eos.hpp"
 #include "../colors.hpp"
 
+
 #include <cassert>
 #include <functional>
 #ifdef STEAMWORKS
 #include <nfd.h>
 #endif
-#ifdef USE_PLAYFAB
-#include "../playfab.hpp"
-#endif
+
+// quick restart:
 
 #ifdef NINTENDO
 #define NETWORK_PORT_CLIENT 56175
@@ -56,6 +58,7 @@ namespace MainMenu {
     constexpr int MAX_FPS = 300;
     constexpr int AUTO_FPS = MAX_FPS + 1;
 	constexpr int MAX_LOBBY_FILTERS_SAVED = 32;
+
 
 	// ALL NEW menu options:
 	std::string current_audio_device;
@@ -369,10 +372,6 @@ namespace MainMenu {
         Video = 1 << 1,
     };
     static int video_refresh = VideoRefresh::None;
-    
-    // if the following is set true, a restart prompt will appear when the user
-    // saves/applies the settings menu
-    static bool restartPromptRequired = false;
 
 	static FadeDestination main_menu_fade_destination = FadeDestination::None;
 	static std::string tutorial_map_destination;
@@ -593,7 +592,6 @@ namespace MainMenu {
 		float fov = 60.f;
 		float fps = AUTO_FPS;
 		std::string audio_device = "";
-        int speaker_mode = 0;
 		float master_volume = 100.f;
 		float gameplay_volume = 100.f;
 		float ambient_volume = 100.f;
@@ -872,8 +870,6 @@ namespace MainMenu {
 
 	static void playNew(Button&);
 	static void playContinue(Button&);
-	static void playChallenge();
-	static void playChallengeLoadingWindow(Button&);
 
 	static void mainPlayGame(Button&);
 	static void mainArchives(Button&);
@@ -881,6 +877,7 @@ namespace MainMenu {
 	static void mainSettings(Button&);
 	static void mainEditor(Button&);
 	static void mainClose(Button&);
+	static void handleFadeFinished(bool ingame);
 	static void mainEndLife(Button&);
 	static void mainDropOut(Button&);
 	static void mainRestartGame(Button&);
@@ -1291,14 +1288,7 @@ namespace MainMenu {
 		return back_button;
 	}
 
-	enum PromptSize
-	{
-		SIZE_SMALL,
-		SIZE_BIG,
-		SIZE_TALL
-	};
-
-	static Frame* createPrompt(const char* name, PromptSize size) {
+	static Frame* createPrompt(const char* name, bool issmall = true) {
 	    if (!main_menu_frame) {
 	        return nullptr;
 	    }
@@ -1315,7 +1305,7 @@ namespace MainMenu {
 		auto frame = dimmer->addFrame(name);
 		frame->setColor(0);
 		frame->setBorder(0);
-		if ( size == SIZE_SMALL ) {
+		if ( issmall ) {
 		    frame->setSize(SDL_Rect{(Frame::virtualScreenX - 364) / 2, (Frame::virtualScreenY - 176) / 2, 364, 176});
 		    frame->setActualSize(SDL_Rect{0, 0, 364, 176});
 		    frame->addImage(
@@ -1324,9 +1314,7 @@ namespace MainMenu {
 			    "*#images/ui/Main Menus/Disconnect/UI_Disconnect_Window00.png",
 			    "background"
 		    );
-		} 
-		else if ( size == SIZE_BIG ) 
-		{
+		} else {
 		    frame->setSize(SDL_Rect{(Frame::virtualScreenX - 548) / 2, (Frame::virtualScreenY - 264) / 2, 548, 264});
 		    frame->setActualSize(SDL_Rect{0, 0, 548, 264});
 		    frame->addImage(
@@ -1335,17 +1323,6 @@ namespace MainMenu {
 			    "*#images/ui/Main Menus/TextboxWindowL_00.png",
 			    "background"
 		    );
-		}
-		else if ( size == SIZE_TALL )
-		{
-			frame->setSize(SDL_Rect{ (Frame::virtualScreenX - 404) / 2, (Frame::virtualScreenY - 374) / 2, 404, 374 });
-			frame->setActualSize(SDL_Rect{ 0, 0, 404, 374 });
-			frame->addImage(
-				frame->getActualSize(),
-				0xffffffff,
-				"*#images/ui/Main Menus/TextboxWindowTall_00.png",
-				"background"
-			);
 		}
 
 		return frame;
@@ -1375,7 +1352,7 @@ namespace MainMenu {
 	) {
 		soundActivate();
 
-	    Frame* frame = createPrompt("text_field_prompt", PromptSize::SIZE_SMALL);
+	    Frame* frame = createPrompt("text_field_prompt");
 	    if (!frame) {
 	        return nullptr;
 	    }
@@ -1494,17 +1471,17 @@ namespace MainMenu {
 		void (*cancel_callback)(Button&),
 		bool leftRed,
 		bool rightRed,
-		PromptSize size
+        bool isSmall
 	) {
 		soundActivate();
 
-	    Frame* frame = createPrompt("binary_prompt", size);
+	    Frame* frame = createPrompt("binary_prompt", isSmall);
 	    if (!frame) {
 	        return nullptr;
 	    }
 
 		auto text = frame->addField("text", 1024);
-		text->setSize(SDL_Rect{30, 28, frame->getSize().w - 60, (size == PromptSize::SIZE_SMALL) ? 46 : 134});
+		text->setSize(SDL_Rect{30, 28, frame->getSize().w - 60, isSmall ? 46 : 134});
 		text->setFont(smallfont_no_outline);
 		text->setText(window_text);
 		text->setJustify(Field::justify_t::CENTER);
@@ -1579,7 +1556,7 @@ namespace MainMenu {
 		bool rightRed = false
 	) {
         return binaryPromptGeneric(window_text, okay_text, cancel_text,
-            okay_callback, cancel_callback, leftRed, rightRed, PromptSize::SIZE_SMALL);
+            okay_callback, cancel_callback, leftRed, rightRed, true);
     }
 
 	static Frame* binaryPromptXL(
@@ -1592,21 +1569,8 @@ namespace MainMenu {
 		bool rightRed = false
 	) {
         return binaryPromptGeneric(window_text, okay_text, cancel_text,
-            okay_callback, cancel_callback, leftRed, rightRed, PromptSize::SIZE_BIG);
+            okay_callback, cancel_callback, leftRed, rightRed, false);
     }
-
-	static Frame* binaryPromptTall(
-		const char* window_text,
-		const char* okay_text,
-		const char* cancel_text,
-		void (*okay_callback)(Button&),
-		void (*cancel_callback)(Button&),
-		bool leftRed = true,
-		bool rightRed = false
-	) {
-		return binaryPromptGeneric(window_text, okay_text, cancel_text,
-			okay_callback, cancel_callback, leftRed, rightRed, PromptSize::SIZE_TALL);
-	}
 
 	static void closeBinary() {
 	    closePrompt("binary_prompt");
@@ -1623,7 +1587,7 @@ namespace MainMenu {
 	) {
 		soundActivate();
 
-	    Frame* frame = createPrompt("trinary_prompt", PromptSize::SIZE_BIG);
+	    Frame* frame = createPrompt("trinary_prompt", false);
 	    if (!frame) {
 	        return nullptr;
 	    }
@@ -1713,7 +1677,7 @@ namespace MainMenu {
 	) {
 		soundActivate();
 
-	    Frame* frame = createPrompt(name, PromptSize::SIZE_SMALL);
+	    Frame* frame = createPrompt(name);
 	    if (!frame) {
 	        return nullptr;
 	    }
@@ -1763,7 +1727,7 @@ namespace MainMenu {
 	) {
 		soundActivate();
 
-	    Frame* frame = createPrompt("mono_prompt", issmall ? PromptSize::SIZE_SMALL : PromptSize::SIZE_BIG);
+	    Frame* frame = createPrompt("mono_prompt", issmall);
 	    if (!frame) {
 	        return nullptr;
 	    }
@@ -1839,7 +1803,7 @@ namespace MainMenu {
 	    ) {
 		soundActivate();
 
-	    Frame* frame = createPrompt(name, issmall ? PromptSize::SIZE_SMALL : PromptSize::SIZE_BIG);
+	    Frame* frame = createPrompt(name, issmall);
 	    if (!frame) {
 	        return nullptr;
 	    }
@@ -2808,7 +2772,7 @@ namespace MainMenu {
 			playerSettings[i].shootmodeCrosshair = shootmode_crosshair;
 			playerSettings[i].shootmodeCrosshairOpacity = shootmode_crosshair_opacity;
 		}
-		*cvar_hdrEnabled = hdr_enabled;
+		*cvar_hdrEnabled = true;// hdr_enabled;
         uiScale = ui_scale / 100.f;
         result |= (oldUIFilter != *ui_filter || oldUIScale != uiScale) ?
             VideoRefresh::General : VideoRefresh::None;
@@ -2856,12 +2820,6 @@ namespace MainMenu {
             fpsLimit = std::min(std::max(MIN_FPS, *cvar_desiredFps), MAX_FPS);
         }
 		current_audio_device = audio_device;
-        if (fmod_speakermode != speaker_mode) {
-            fmod_speakermode = (FMOD_SPEAKERMODE)speaker_mode;
-            if (initialized) {
-                restartPromptRequired = true;
-            }
-        }
 		MainMenu::master_volume = std::min(std::max(0.f, master_volume / 100.f), 1.f);
 		sfxvolume = std::min(std::max(0.f, gameplay_volume / 100.f), 1.f);
 		sfxAmbientVolume = std::min(std::max(0.f, ambient_volume / 100.f), 1.f);
@@ -2934,7 +2892,7 @@ namespace MainMenu {
 			100.f * (Player::WorldUI_t::tooltipHeightOffsetZ - 6) / -6;
 		settings.shootmode_crosshair = playerSettings[0].shootmodeCrosshair;
 		settings.shootmode_crosshair_opacity = playerSettings[0].shootmodeCrosshairOpacity;
-		settings.hdr_enabled = *cvar_hdrEnabled;
+		settings.hdr_enabled = true;// *cvar_hdrEnabled;
 		settings.show_messages_enabled = !disable_messages;
 		settings.show_messages = Messages::load();
 		settings.show_player_nametags_enabled = !hide_playertags;
@@ -2960,7 +2918,6 @@ namespace MainMenu {
 		settings.fov = ::fov;
 		settings.fps = *cvar_desiredFps;
 		settings.audio_device = current_audio_device;
-        settings.speaker_mode = (int)fmod_speakermode;
 		settings.master_volume = MainMenu::master_volume * 100.f;
 		settings.gameplay_volume = (float)sfxvolume * 100.f;
 		settings.ambient_volume = (float)sfxAmbientVolume * 100.f;
@@ -3003,7 +2960,7 @@ namespace MainMenu {
 	}
 
 	bool AllSettings::serialize(FileInterface* file) {
-	    int version = 20;
+	    int version = 19;
 	    file->property("version", version);
 	    file->property("mods", mods);
 		file->property("crossplay_enabled", crossplay_enabled);
@@ -3076,7 +3033,6 @@ namespace MainMenu {
         }
 		file->propertyVersion("use_hdr", version >= 11, hdr_enabled);
 		file->propertyVersion("audio_device", version >= 4, audio_device);
-		file->propertyVersion("speaker_mode", version >= 20, speaker_mode);
 		file->property("master_volume", master_volume);
 		file->property("gameplay_volume", gameplay_volume);
 		file->property("ambient_volume", ambient_volume);
@@ -3179,21 +3135,7 @@ namespace MainMenu {
 
 	static void createStoryScreen(const char* file, void (*end_func)()) {
 	    char filename[PATH_MAX];
-
-#ifndef NINTENDO
-		if ( !PHYSFS_getRealDir(file) )
-		{
-			printlog("[JSON]: Error: Could not find file: %s", file);
-			return;
-		}
-		std::string inputPath = PHYSFS_getRealDir(file);
-		inputPath.append(PHYSFS_getDirSeparator());
-		inputPath.append(file);
-
-		stringCopy(filename, inputPath.c_str(), sizeof(filename), inputPath.size());
-#else
 	    (void)completePath(filename, file);
-#endif
 
         struct Story {
             int version = 1;
@@ -4493,28 +4435,6 @@ namespace MainMenu {
 			auto settings_subwindow = settings->findFrame("settings_subwindow"); assert(settings_subwindow);
 			auto button = settings_subwindow->findButton("setting_device_dropdown_button"); assert(button);
 			auto dropdown = settings_subwindow->findFrame("setting_device_dropdown"); assert(dropdown);
-			button->setText(entry.name.c_str());
-			dropdown->removeSelf();
-			button->select();
-			});
-	}
-
-	static void settingsAudioSpeakerMode(Button& button) {
-		settingsOpenDropdown(button, "speaker_mode", DropdownType::Wide, [](Frame::entry_t& entry){
-			soundActivate();
-
-			// store speaker mode
-            for (int c = 6141; c <= 6149; ++c) {
-                if (entry.text == Language::get(c)) {
-                    allSettings.speaker_mode = (int)(FMOD_SPEAKERMODE_DEFAULT + c - 6141);
-                    break;
-                }
-            }
-
-			auto settings = main_menu_frame->findFrame("settings"); assert(settings);
-			auto settings_subwindow = settings->findFrame("settings_subwindow"); assert(settings_subwindow);
-			auto button = settings_subwindow->findButton("setting_speaker_mode_dropdown_button"); assert(button);
-			auto dropdown = settings_subwindow->findFrame("setting_speaker_mode_dropdown"); assert(dropdown);
 			button->setText(entry.name.c_str());
 			dropdown->removeSelf();
 			button->select();
@@ -6268,8 +6188,8 @@ bind_failed:
         
 		y += settingsAddSlider(*settings_subwindow, y, "fps", Language::get(5169), Language::get(5170),
 			allSettings.fps ? allSettings.fps : AUTO_FPS, MIN_FPS, AUTO_FPS, sliderFPS, [](Slider& slider){soundSliderSetting(slider, true); allSettings.fps = slider.getValue();});
-		y += settingsAddBooleanOption(*settings_subwindow, y, "hdr_enabled", Language::get(5171), Language::get(5172),
-			allSettings.hdr_enabled, [](Button& button) {soundToggleSetting(button); allSettings.hdr_enabled = button.isPressed(); });
+		/*y += settingsAddBooleanOption(*settings_subwindow, y, "hdr_enabled", Language::get(5171), Language::get(5172),
+			allSettings.hdr_enabled, [](Button& button) {soundToggleSetting(button); allSettings.hdr_enabled = button.isPressed(); });*/
 		y += settingsAddBooleanOption(*settings_subwindow, y, "use_frame_interpolation", Language::get(5173), Language::get(5174),
 			allSettings.use_frame_interpolation, [](Button& button) {soundToggleSetting(button); allSettings.use_frame_interpolation = button.isPressed();});
 #endif
@@ -6289,7 +6209,7 @@ bind_failed:
 			{Setting::Type::Slider, "gamma"},
 			{Setting::Type::Slider, "fov"},
 			{Setting::Type::Slider, "fps"},
-			{Setting::Type::Boolean, "hdr_enabled"},
+			/*{Setting::Type::Boolean, "hdr_enabled"},*/
 			{Setting::Type::Boolean, "use_frame_interpolation"},
 			{Setting::Type::Boolean, "vertical_split"},
 			{Setting::Type::Boolean, "clipped_split"},
@@ -6331,6 +6251,7 @@ bind_failed:
 		int selected_device = 0;
 		int num_drivers = 0;
 		(void)fmod_system->getNumDrivers(&num_drivers);
+
 		audio_drivers.clear();
 		audio_drivers.reserve(num_drivers);
 		for (int c = 0; c < num_drivers; ++c) {
@@ -6353,22 +6274,11 @@ bind_failed:
 		for (auto& d : audio_drivers) {
 			drivers_formatted_ptrs.push_back(d.name);
 		}
-  
-		std::vector<const char*> modes_ptrs;
-		modes_ptrs.reserve(6149 - 6141 + 1);
-		for (int c = 6141; c <= 6149; ++c) {
-			modes_ptrs.push_back(Language::get(c));
-		}
 
 		y += settingsAddSubHeader(*settings_subwindow, y, "output", Language::get(5182));
-		if ( num_drivers > 0 )
-		{
-			y += settingsAddDropdown(*settings_subwindow, y, "device", Language::get(5183), Language::get(5184),
-			    true, drivers_formatted_ptrs, drivers_formatted_ptrs[selected_device],
-			    settingsAudioDevice);
-		}
-		y += settingsAddDropdown(*settings_subwindow, y, "speaker_mode", Language::get(6140), Language::get(6150),
-			true, modes_ptrs, modes_ptrs[allSettings.speaker_mode], settingsAudioSpeakerMode);
+		y += settingsAddDropdown(*settings_subwindow, y, "device", Language::get(5183), Language::get(5184),
+            true, drivers_formatted_ptrs, drivers_formatted_ptrs[selected_device],
+            settingsAudioDevice);
 #endif
 
 		y += settingsAddSubHeader(*settings_subwindow, y, "volume", Language::get(5185));
@@ -6412,40 +6322,21 @@ bind_failed:
 #endif
 
 #ifndef NINTENDO
-		if ( num_drivers > 0 )
-		{
-			hookSettings(*settings_subwindow,
+		hookSettings(*settings_subwindow,
 			{
 #ifdef USE_FMOD
 			{Setting::Type::Dropdown, "device"},
-			{Setting::Type::Dropdown, "speaker_mode"},
 #endif
-				{Setting::Type::Slider, "master_volume"},
-				{Setting::Type::Slider, "gameplay_volume"},
-				{Setting::Type::Slider, "ambient_volume"},
-				{Setting::Type::Slider, "environment_volume"},
-				{Setting::Type::Slider, "notification_volume"},
-				{Setting::Type::Slider, "music_volume"},
-				{Setting::Type::Boolean, "minimap_pings"},
-				{Setting::Type::Boolean, "player_monster_sounds"},
-				{Setting::Type::Boolean, "out_of_focus_audio"},
-				{Setting::Type::Boolean, "music_preload"}});
-		}
-		else // no devices found, skip device dropdown
-		{
-			hookSettings(*settings_subwindow,
-				{
-				{Setting::Type::Slider, "master_volume"},
-				{Setting::Type::Slider, "gameplay_volume"},
-				{Setting::Type::Slider, "ambient_volume"},
-				{Setting::Type::Slider, "environment_volume"},
-				{Setting::Type::Slider, "notification_volume"},
-				{Setting::Type::Slider, "music_volume"},
-				{Setting::Type::Boolean, "minimap_pings"},
-				{Setting::Type::Boolean, "player_monster_sounds"},
-				{Setting::Type::Boolean, "out_of_focus_audio"},
-				{Setting::Type::Boolean, "music_preload"}});
-		}
+			{Setting::Type::Slider, "master_volume"},
+			{Setting::Type::Slider, "gameplay_volume"},
+			{Setting::Type::Slider, "ambient_volume"},
+			{Setting::Type::Slider, "environment_volume"},
+			{Setting::Type::Slider, "notification_volume"},
+			{Setting::Type::Slider, "music_volume"},
+			{Setting::Type::Boolean, "minimap_pings"},
+			{Setting::Type::Boolean, "player_monster_sounds"},
+			{Setting::Type::Boolean, "out_of_focus_audio"},
+			{Setting::Type::Boolean, "music_preload"}});
 #else
 		hookSettings(*settings_subwindow,
 			{{Setting::Type::Slider, "master_volume"},
@@ -6459,16 +6350,8 @@ bind_failed:
 #endif
 
 #if !defined(NINTENDO) && defined(USE_FMOD)
-		if ( num_drivers > 0 )
-		{
-			settingsSubwindowFinalize(*settings_subwindow, y, {Setting::Type::Dropdown, "device"});
-			settingsSelect(*settings_subwindow, {Setting::Type::Dropdown, "device"});
-		}
-		else
-		{
-			settingsSubwindowFinalize(*settings_subwindow, y, { Setting::Type::Slider, "master_volume" });
-			settingsSelect(*settings_subwindow, { Setting::Type::Slider, "master_volume" });
-		}
+		settingsSubwindowFinalize(*settings_subwindow, y, {Setting::Type::Dropdown, "device"});
+		settingsSelect(*settings_subwindow, {Setting::Type::Dropdown, "device"});
 #else
 		settingsSubwindowFinalize(*settings_subwindow, y, {Setting::Type::Slider, "master_volume"});
 		settingsSelect(*settings_subwindow, {Setting::Type::Slider, "master_volume"});
@@ -7136,7 +7019,7 @@ bind_failed:
 			{Setting::Type::Boolean, "classic_mode"},
 			{Setting::Type::Boolean, "keep_inventory"},
 			{Setting::Type::Boolean, "extra_life"},
-			{Setting::Type::Boolean, "cheats"}});
+			{Setting::Type::Boolean, "cheats"} });
 #else
 		hookSettings(*settings_subwindow,
 			{{Setting::Type::Boolean, "hunger"},
@@ -7152,55 +7035,22 @@ bind_failed:
 		settingsSubwindowFinalize(*settings_subwindow, y, {Setting::Type::Boolean, "hunger"});
 		settingsSelect(*settings_subwindow, {Setting::Type::Boolean, "hunger"});
 
-
-		if (multiplayer == CLIENT || gameModeManager.currentSession.challengeRun.isActive() ) {
-			static std::unordered_map<std::string, int> options;
-			if ( multiplayer == CLIENT )
-			{
-				options = {
-					{"setting_hunger_button", SV_FLAG_HUNGER},
-					{"setting_minotaur_button", SV_FLAG_MINOTAURS},
-					{"setting_random_traps_button", SV_FLAG_TRAPS},
-					{"setting_friendly_fire_button", SV_FLAG_FRIENDLYFIRE},
-					{"setting_hardcore_mode_button", SV_FLAG_HARDCORE},
-					{"setting_classic_mode_button", SV_FLAG_CLASSIC},
-					{"setting_keep_inventory_button", SV_FLAG_KEEPINVENTORY},
-					{"setting_extra_life_button", SV_FLAG_LIFESAVING},
-					{"setting_cheats_button", SV_FLAG_CHEATS},
-				};
-			}
-
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				for ( int c = 0; c < NUM_SERVER_FLAGS; ++c )
-				{
-					const Uint32 flag = (1 << c);
-					const bool locked = (gameModeManager.currentSession.challengeRun.lockedFlags & (flag)) == 0 ? false : true;
-					if ( locked )
-					{
-						switch ( flag )
-						{
-						case SV_FLAG_HUNGER: options["setting_hunger_button"] = SV_FLAG_HUNGER; break;
-						case SV_FLAG_MINOTAURS: options["setting_minotaur_button"] = SV_FLAG_MINOTAURS; break;
-						case SV_FLAG_TRAPS: options["setting_random_traps_button"] = SV_FLAG_TRAPS; break;
-						case SV_FLAG_FRIENDLYFIRE: options["setting_friendly_fire_button"] = SV_FLAG_FRIENDLYFIRE; break;
-						case SV_FLAG_HARDCORE: options["setting_hardcore_mode_button"] = SV_FLAG_HARDCORE; break;
-						case SV_FLAG_CLASSIC: options["setting_classic_mode_button"] = SV_FLAG_CLASSIC; break;
-						case SV_FLAG_KEEPINVENTORY: options["setting_keep_inventory_button"] = SV_FLAG_KEEPINVENTORY; break;
-						case SV_FLAG_LIFESAVING: options["setting_extra_life_button"] = SV_FLAG_LIFESAVING; break;
-						case SV_FLAG_CHEATS: options["setting_cheats_button"] = SV_FLAG_CHEATS; break;
-						}
-					}
-				}
-			}
-
+		if (multiplayer == CLIENT) {
+			static const std::unordered_map<std::string, int> options = {
+				{"setting_hunger_button", SV_FLAG_HUNGER},
+				{"setting_minotaur_button", SV_FLAG_MINOTAURS},
+				{"setting_random_traps_button", SV_FLAG_TRAPS},
+				{"setting_friendly_fire_button", SV_FLAG_FRIENDLYFIRE},
+				{"setting_hardcore_mode_button", SV_FLAG_HARDCORE},
+				{"setting_classic_mode_button", SV_FLAG_CLASSIC},
+				{"setting_keep_inventory_button", SV_FLAG_KEEPINVENTORY},
+				{"setting_extra_life_button", SV_FLAG_LIFESAVING},
+				{"setting_cheats_button", SV_FLAG_CHEATS},
+			};
 			for (auto& button : settings_subwindow->getButtons()) {
-				auto find = options.find(button->getName());
-				if ( find != options.end() ) {
-					button->setDisabled(true);
-					button->setColor(makeColor(127, 127, 127, 255));
-					button->setTextColor(makeColor(127, 127, 127, 255));
-				}
+				button->setDisabled(true);
+				button->setColor(makeColor(127, 127, 127, 255));
+				button->setTextColor(makeColor(127, 127, 127, 255));
 			}
 			auto updater = settings_subwindow->addFrame("updater");
 			updater->setInvisible(true);
@@ -7217,847 +7067,9 @@ bind_failed:
 		}
 	}
 
-	static void createOnlineLeaderboardsFilter()
-	{
-#ifdef USE_PLAYFAB
-		if ( playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch].loading )
-		{
-			return;
-		}
-
-		closeBinary();
-
-		PromptSize size = playfabUser.leaderboardSearch.daily ? SIZE_BIG : SIZE_TALL;
-		if ( playfabUser.leaderboardSearch.challengeBoard != playfabUser.leaderboardSearch.CHALLENGE_BOARD_NONE )
-		{
-			size = SIZE_BIG;
-		}
-		auto prompt = binaryPromptGeneric(Language::get(6078), Language::get(6074), Language::get(5926),
-			[](Button& button) {
-				soundActivate();
-
-				if ( auto frame = static_cast<Frame*>(button.getParent()) )
-				{
-					for ( auto b : frame->getButtons() )
-					{
-						if ( !strcmp(b->getName(), "filter_win") )
-						{
-							int val = reinterpret_cast<intptr_t>(b->getUserData());
-							playfabUser.leaderboardSearch.victory = std::max(1, std::min(val, 3));
-						}
-						if ( !b->isPressed() )
-						{
-							continue;
-						}
-						if ( !strcmp(b->getName(), "filter1_top") )
-						{
-							playfabUser.leaderboardSearch.win = true;
-						}
-						else if ( !strcmp(b->getName(), "filter1_bottom") )
-						{
-							playfabUser.leaderboardSearch.win = false;
-						}
-						else if ( !strcmp(b->getName(), "filter2_top") )
-						{
-							playfabUser.leaderboardSearch.scoresNearMe = false;
-						}
-						else if ( !strcmp(b->getName(), "filter2_bottom") )
-						{
-							playfabUser.leaderboardSearch.scoresNearMe = true;
-						}
-						else if ( !strcmp(b->getName(), "filter3_top") )
-						{
-							playfabUser.leaderboardSearch.scoreType = PlayfabUser_t::LeaderboardSearch_t::RANK_TOTALSCORE;
-						}
-						else if ( !strcmp(b->getName(), "filter3_bottom") )
-						{
-							playfabUser.leaderboardSearch.scoreType = PlayfabUser_t::LeaderboardSearch_t::RANK_TIME;
-						}
-						else if ( !strcmp(b->getName(), "filter4_top") )
-						{
-							playfabUser.leaderboardSearch.multiplayer = false;
-						}
-						else if ( !strcmp(b->getName(), "filter4_bottom") )
-						{
-							playfabUser.leaderboardSearch.multiplayer = true;
-						}
-						else if ( !strcmp(b->getName(), "filter5_top") )
-						{
-							playfabUser.leaderboardSearch.dlc = false;
-						}
-						else if ( !strcmp(b->getName(), "filter5_bottom") )
-						{
-							playfabUser.leaderboardSearch.dlc = true;
-						}
-						else if ( !strcmp(b->getName(), "filter6_top") )
-						{
-							playfabUser.leaderboardSearch.hardcore = false;
-						}
-						else if ( !strcmp(b->getName(), "filter6_bottom") )
-						{
-							playfabUser.leaderboardSearch.hardcore = true;
-						}
-					}
-				}
-				closeBinary();
-				playfabUser.leaderboardSearch.requiresRefresh = true;
-		},
-		[](Button&) {
-			soundCancel();
-			closeBinary();
-			playfabUser.leaderboardSearch.requiresRefresh = true;
-		},
-		false, true, size);
-
-		if ( !prompt ) {
-			return;
-		}
-		if ( Field* text = prompt->findField("text") )
-		{
-			text->setVJustify(Field::justify_t::TOP);
-			text->setFont(bigfont_outline);
-			auto pos = text->getSize();
-			pos.y -= ((size == SIZE_TALL) ? 8 : 0);
-			text->setSize(pos);
-		}
-		if ( Button* okay = prompt->findButton("okay") )
-		{
-			okay->setWidgetUp(size == SIZE_TALL ? "filter5_bottom" : "filter2_bottom");
-			if ( size == SIZE_TALL )
-			{
-				auto pos = okay->getSize();
-				pos.y += 16;
-				okay->setSize(pos);
-			}
-		}
-		if ( Button* cancel = prompt->findButton("cancel") )
-		{
-			cancel->setWidgetUp(size == SIZE_TALL ? "filter6_bottom" : "filter3_bottom");
-			if ( size == SIZE_TALL )
-			{
-				auto pos = cancel->getSize();
-				pos.y += 16;
-				cancel->setSize(pos);
-			}
-		}
-
-		const int upperRowY = (size == SIZE_TALL) ? 12 : 32;
-		const int middleRowY = upperRowY + 74;
-		const int lowerRowY = middleRowY + 74;
-		const int pairY = 32;
-		const int baseY = 52;
-		const int columnLeftX = 48;
-		const int columnMiddleX = (size == SIZE_TALL) ? 232 : 214;
-		const int columnRightX = 372;
-
-		std::vector<std::pair<int, int>> gridPos;
-		if ( size == SIZE_TALL )
-		{
-			gridPos.push_back(std::make_pair(columnLeftX, baseY + upperRowY));
-			gridPos.push_back(std::make_pair(columnMiddleX, baseY + upperRowY));
-
-			gridPos.push_back(std::make_pair(columnLeftX, baseY + middleRowY));
-			gridPos.push_back(std::make_pair(columnMiddleX, baseY + middleRowY));
-
-			gridPos.push_back(std::make_pair(columnLeftX, baseY + lowerRowY));
-			gridPos.push_back(std::make_pair(columnMiddleX, baseY + lowerRowY));
-		}
-		else if ( size == SIZE_BIG )
-		{
-			gridPos.push_back(std::make_pair(columnLeftX, baseY + upperRowY));
-			gridPos.push_back(std::make_pair(columnMiddleX, baseY + upperRowY));
-			gridPos.push_back(std::make_pair(columnRightX, baseY + upperRowY));
-		}
-
-		{
-			Button* button = prompt->addButton("filter1_top");
-
-			button->select();
-			button->setPressed(playfabUser.leaderboardSearch.win);
-
-			button->setSize(SDL_Rect{ gridPos[0].first, gridPos[0].second, 30, 30});
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetDown("filter1_bottom");
-			button->setWidgetRight(size == SIZE_TALL ? "filter_win" : "filter2_top");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-				if ( button.getParent() )
-				{
-					if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter1_bottom") )
-					{
-						button2->setPressed(false);
-					}
-				}
-			});
-
-			{
-				Field* field = prompt->addField("filter1_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6064));
-
-				if ( size == SIZE_TALL )
-				{
-					auto button = prompt->addButton("filter_win");
-					button->setSize(SDL_Rect{ pos.x + 42, pos.y - 4, 82, 26 });
-					button->setBackground("*images/ui/Main Menus/Leaderboards/Button_FilterWin_00.png");
-					button->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/Button_FilterWinHigh_00.png");
-					button->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/Button_FilterWinPress_00.png");
-					button->setHighlightColor(makeColor(255, 255, 255, 255));
-					button->setColor(makeColor(255, 255, 255, 255));
-					button->setTextColor(makeColor(255, 255, 255, 255));
-					switch ( playfabUser.leaderboardSearch.victory )
-					{
-					case 1:
-						button->setText(Language::get(6076));
-						button->setUserData((void*)(intptr_t)(1));
-						break;
-					case 2:
-						button->setText(Language::get(6077));
-						button->setUserData((void*)(intptr_t)(2));
-						break;
-					case 3:
-					case 4:
-					case 5:
-					default:
-						button->setText(Language::get(6075));
-						button->setUserData((void*)(intptr_t)(3));
-						break;
-					}
-					button->setFont(smallfont_outline);
-					button->setButtonsOffset(SDL_Rect{ 0, 8, 0, 0 });
-
-					button->setWidgetDown("filter1_bottom");
-					button->setWidgetRight("filter2_top");
-					button->setWidgetLeft("filter1_top");
-					button->addWidgetAction("MenuStart", "okay");
-					button->setWidgetBack("cancel");
-					button->setCallback([](Button& button) {
-						soundActivate();
-					int val = reinterpret_cast<intptr_t>(button.getUserData());
-					if ( val >= 3 )
-					{
-						val = 1;
-					}
-					else
-					{
-						++val;
-					}
-					switch ( val )
-					{
-					case 1:
-						button.setText(Language::get(6076));
-						break;
-					case 2:
-						button.setText(Language::get(6077));
-						break;
-					case 3:
-					case 4:
-					case 5:
-					default:
-						button.setText(Language::get(6075));
-						break;
-					}
-					button.setUserData((void*)(intptr_t)(val));
-
-					if ( auto frame = static_cast<Frame*>(button.getParent()) )
-					{
-						if ( auto b = frame->findButton("filter1_top") )
-						{
-							b->setPressed(true);
-						}
-						if ( auto b = frame->findButton("filter1_bottom") )
-						{
-							b->setPressed(false);
-						}
-					}
-						});
-				}
-			}
-
-			button = prompt->addButton("filter1_bottom");
-			button->setPressed(!playfabUser.leaderboardSearch.win);
-
-			button->setSize(SDL_Rect{ gridPos[0].first, gridPos[0].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter1_top");
-			button->setWidgetDown(size == SIZE_TALL ? "filter3_top" : "okay");
-			button->setWidgetRight("filter2_bottom");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter1_top") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter1_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6065));
-			}
-		}
-
-		{
-			Button* button = prompt->addButton("filter2_top");
-			button->setPressed(!playfabUser.leaderboardSearch.scoresNearMe);
-
-			button->setSize(SDL_Rect{ gridPos[1].first, gridPos[1].second, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetDown("filter2_bottom");
-			if ( size != SIZE_TALL )
-			{
-				button->setWidgetRight("filter3_top");
-			}
-			button->setWidgetLeft(size == SIZE_TALL ? "filter_win" : "filter1_top");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter2_bottom") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter2_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6062));
-			}
-
-			button = prompt->addButton("filter2_bottom");
-			button->setPressed(playfabUser.leaderboardSearch.scoresNearMe);
-
-			button->setSize(SDL_Rect{ gridPos[1].first, gridPos[1].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter2_top");
-			button->setWidgetDown(size == SIZE_TALL ? "filter4_top" : "okay");
-			if ( size != SIZE_TALL )
-			{
-				button->setWidgetRight("filter3_bottom");
-			}
-			button->setWidgetLeft("filter1_bottom");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter2_top") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter2_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6063));
-			}
-		}
-
-		{
-			Button* button = prompt->addButton("filter3_top");
-			button->setPressed(playfabUser.leaderboardSearch.scoreType == PlayfabUser_t::LeaderboardSearch_t::RANK_TOTALSCORE);
-
-			button->setSize(SDL_Rect{ gridPos[2].first, gridPos[2].second, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			if ( size == SIZE_TALL )
-			{
-				button->setWidgetUp("filter1_bottom");
-				button->setWidgetRight("filter4_top");
-				button->setWidgetDown("filter3_bottom");
-			}
-			else
-			{
-				button->setWidgetDown("filter3_bottom");
-				button->setWidgetLeft("filter2_top");
-			}
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-				if ( button.getParent() )
-				{
-					if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter3_bottom") )
-					{
-						button2->setPressed(false);
-					}
-				}
-			});
-
-			{
-				Field* field = prompt->addField("filter3_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6066));
-				field->setTickCallback([](Widget& widget) {
-					auto field = static_cast<Field*>(&widget);
-				field->setColor(makeColor(170, 134, 102, 255));
-					if ( auto frame = static_cast<Frame*>(widget.getParent()) )
-					{
-						if ( auto button = frame->findButton("filter1_bottom") )
-						{
-							if ( button->isPressed() )
-							{
-								field->setColor(makeColor(64, 64, 64, 255));
-							}
-						}
-					}
-				});
-			}
-
-			button = prompt->addButton("filter3_bottom");
-			button->setPressed(playfabUser.leaderboardSearch.scoreType == PlayfabUser_t::LeaderboardSearch_t::RANK_TIME);
-
-			button->setSize(SDL_Rect{ gridPos[2].first, gridPos[2].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter3_top");
-			button->setWidgetDown(size == SIZE_TALL ? "filter5_top" : "cancel");
-			if ( size == SIZE_TALL )
-			{
-				button->setWidgetRight("filter4_bottom");
-			}
-			else
-			{
-				button->setWidgetLeft("filter2_bottom");
-			}
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-				if ( button.getParent() )
-				{
-					if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter3_top") )
-					{
-						button2->setPressed(false);
-					}
-				}
-			});
-
-			{
-				Field* field = prompt->addField("filter3_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6067));
-
-				field->setTickCallback([](Widget& widget) {
-					auto field = static_cast<Field*>(&widget);
-					field->setColor(makeColor(170, 134, 102, 255));
-					if ( auto frame = static_cast<Frame*>(widget.getParent()) )
-					{
-						if ( auto button = frame->findButton("filter1_bottom") )
-						{
-							if ( button->isPressed() )
-							{
-								field->setColor(makeColor(64, 64, 64, 255));
-							}
-						}
-					}
-				});
-			}
-		}
-
-		if ( size == SIZE_TALL )
-		{
-			Button* button = prompt->addButton("filter4_top");
-			button->setPressed(!playfabUser.leaderboardSearch.multiplayer);
-
-			button->setSize(SDL_Rect{ gridPos[3].first, gridPos[3].second, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter2_bottom");
-			button->setWidgetLeft("filter3_top");
-			button->setWidgetDown("filter4_bottom");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter4_bottom") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter4_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6068));
-			}
-
-			button = prompt->addButton("filter4_bottom");
-			button->setPressed(playfabUser.leaderboardSearch.multiplayer);
-
-			button->setSize(SDL_Rect{ gridPos[3].first, gridPos[3].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter4_top");
-			button->setWidgetLeft("filter3_bottom");
-			button->setWidgetDown("filter6_top");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter4_top") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter4_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6069));
-			}
-		}
-
-		if ( size == SIZE_TALL )
-		{
-			Button* button = prompt->addButton("filter5_top");
-			button->setPressed(!playfabUser.leaderboardSearch.dlc);
-
-			button->setSize(SDL_Rect{ gridPos[4].first, gridPos[4].second, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter3_bottom");
-			button->setWidgetDown("filter5_bottom");
-			button->setWidgetRight("filter6_top");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter5_bottom") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter5_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6070));
-			}
-
-			button = prompt->addButton("filter5_bottom");
-			button->setPressed(playfabUser.leaderboardSearch.dlc);
-
-			button->setSize(SDL_Rect{ gridPos[4].first, gridPos[4].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter5_top");
-			button->setWidgetDown("okay");
-			button->setWidgetRight("filter6_bottom");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter5_top") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter5_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6071));
-			}
-		}
-
-		if ( size == SIZE_TALL )
-		{
-			Button* button = prompt->addButton("filter6_top");
-			button->setPressed(!playfabUser.leaderboardSearch.hardcore);
-
-			button->setSize(SDL_Rect{ gridPos[5].first, gridPos[5].second, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter4_bottom");
-			button->setWidgetDown("filter6_bottom");
-			button->setWidgetLeft("filter5_top");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter6_bottom") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter6_top_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6072));
-			}
-
-			button = prompt->addButton("filter6_bottom");
-			button->setPressed(playfabUser.leaderboardSearch.hardcore);
-
-			button->setSize(SDL_Rect{ gridPos[5].first, gridPos[5].second + pairY, 30, 30 });
-			button->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
-			button->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
-			button->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
-			button->setIcon("*images/ui/Main Menus/sublist_item-picked.png");
-			button->setStyle(Button::style_t::STYLE_RADIO);
-			button->setBorder(0);
-			button->setBorderColor(0);
-			button->setColor(0xffffffff);
-			button->setHighlightColor(0xffffffff);
-			button->setWidgetSearchParent(prompt->getName());
-			button->addWidgetAction("MenuStart", "okay");
-			button->setWidgetBack("cancel");
-
-			button->setWidgetUp("filter6_top");
-			button->setWidgetDown("cancel");
-			button->setWidgetLeft("filter5_bottom");
-
-			button->setCallback([](Button& button) {
-				soundCheckmark();
-			if ( button.getParent() )
-			{
-				if ( auto button2 = static_cast<Frame*>(button.getParent())->findButton("filter6_top") )
-				{
-					button2->setPressed(false);
-				}
-			}
-				});
-
-			{
-				Field* field = prompt->addField("filter6_bottom_txt", 64);
-				SDL_Rect pos = button->getSize();
-				pos.x += pos.w + 8;
-				pos.y += 4;
-				pos.w = 100;
-				field->setSize(pos);
-				field->setJustify(Field::justify_t::LEFT);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(170, 134, 102, 255));
-				field->setText(Language::get(6073));
-			}
-		}
-#endif
-	}
 /******************************************************************************/
 
-    static void createLeaderboards(std::string leaderboard_type) {
+    static void createLeaderboards() {
         assert(main_menu_frame);
 
         static score_t* selectedScore;
@@ -8082,77 +7094,20 @@ bind_failed:
         window->setBorder(0);
         window->setColor(0);
 
-		if ( leaderboard_type == "" )
-		{
-			auto back = createBackWidget(window, [](Button& button){
-				soundCancel();
-				auto frame = static_cast<Frame*>(button.getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame->removeSelf();
-				if (!main_menu_frame) {
-					return;
-				}
-				auto buttons = main_menu_frame->findFrame("buttons"); assert(buttons);
-				auto leaderboards = buttons->findButton("Leaderboards"); assert(leaderboards);
-				leaderboards->select();
-				});
-			back->select();
-		}
-		else if ( leaderboard_type == "lid_seed_oneshot" )
-		{
-			auto back = createBackWidget(window, [](Button& button) {
-				soundCancel();
-				auto frame = static_cast<Frame*>(button.getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame->removeSelf();
-				if ( !main_menu_frame ) {
-					return;
-				}
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge1_leaderboards = challenge_window->findButton("challenge1_leaderboards");
-				assert(challenge1_leaderboards);
-				challenge1_leaderboards->select();
-				});
-			back->select();
-		}
-		else if ( leaderboard_type == "lid_seed_unlimited" )
-		{
-			auto back = createBackWidget(window, [](Button& button) {
-				soundCancel();
-				auto frame = static_cast<Frame*>(button.getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame->removeSelf();
-				if ( !main_menu_frame ) {
-					return;
-				}
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge2_leaderboards = challenge_window->findButton("challenge2_leaderboards");
-				assert(challenge2_leaderboards);
-				challenge2_leaderboards->select();
-				});
-			back->select();
-		}
-		else if ( leaderboard_type == "lid_seed_challenge" )
-		{
-			auto back = createBackWidget(window, [](Button& button) {
-				soundCancel();
-				auto frame = static_cast<Frame*>(button.getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame->removeSelf();
-				if ( !main_menu_frame ) {
-					return;
-				}
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge3_leaderboards = challenge_window->findButton("challenge3_leaderboards");
-				assert(challenge3_leaderboards);
-				challenge3_leaderboards->select();
-				});
-			back->select();
-		}
+		auto back = createBackWidget(window, [](Button& button){
+			soundCancel();
+			auto frame = static_cast<Frame*>(button.getParent());
+			frame = static_cast<Frame*>(frame->getParent());
+			frame = static_cast<Frame*>(frame->getParent());
+			frame->removeSelf();
+			if (!main_menu_frame) {
+				return;
+			}
+			auto buttons = main_menu_frame->findFrame("buttons"); assert(buttons);
+			auto leaderboards = buttons->findButton("Leaderboards"); assert(leaderboards);
+			leaderboards->select();
+			});
+		back->select();
 
         auto background = window->addImage(
 			SDL_Rect{10, 0, 972, 714},
@@ -8238,11 +7193,10 @@ bind_failed:
 		conduct->addWidgetMovement("MenuListCancel", "conduct");
 		conduct->addWidgetAction("MenuCancel", "back_button");
 		conduct->addWidgetAction("MenuAlt1", "delete_entry");
-		conduct->addWidgetAction("MenuAlt2", "open_filters");
         conduct->addWidgetAction("MenuPageLeft", "tab_left");
         conduct->addWidgetAction("MenuPageRight", "tab_right");
-		conduct->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		conduct->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+        conduct->addWidgetAction("MenuPageLeftAlt", "category_left");
+        conduct->addWidgetAction("MenuPageRightAlt", "category_right");
         conduct->setWidgetRight("kills_left");
         conduct->setSelectedEntryColor(makeColor(151, 115, 58, 255));
 		conduct->setScrollWithLeftControls(false);
@@ -8308,213 +7262,13 @@ bind_failed:
 		    character_attributes[c]->setVJustify(Field::justify_t::CENTER);
 		}
 
-		static bool kills_show_proficiencies;
 		auto kills_banner = subframe->addField("kills_banner", 64);
 		kills_banner->setFont(bigfont_outline);
 		kills_banner->setSize(SDL_Rect{426, 188, 182, 34});
 		kills_banner->setColor(makeColor(203, 171, 101, 255));
 		kills_banner->setHJustify(Field::justify_t::LEFT);
 		kills_banner->setVJustify(Field::justify_t::CENTER);
-		kills_banner->setText(kills_show_proficiencies ? Language::get(6164) : Language::get(5278));
-
-		auto kills_img = subframe->addImage(SDL_Rect{ 426 - 32 - 8, 188 + 4 - 2, 32, 32 }, 0xFFFFFFFF,
-			"*images/ui/Main Menus/Leaderboards/kills.png", "kills_img");
-
-		static auto kills_refresh = [](Frame* subframe, score_t* score) {
-			if ( !subframe ) {
-				return false;
-			}
-
-			if ( auto kills_banner = subframe->findField("kills_banner") )
-			{
-				kills_banner->setText(kills_show_proficiencies ? Language::get(6164) : Language::get(5278));
-				if ( auto kills_img = subframe->findImage("kills_img") )
-				{
-					if ( kills_show_proficiencies )
-					{
-						kills_img->path = "*images/ui/SkillSheet/Icons/Leadership01_Gold.png";
-						kills_img->pos = SDL_Rect{ 426 - 32 - 8 + 4, 188 + 4 + 4, 24, 24 };
-						//kills_banner->setSize(SDL_Rect{ 426, 188, 182, 34 });
-					}
-					else
-					{
-						kills_img->path = "*images/ui/Main Menus/Leaderboards/kills.png";
-						kills_img->pos = SDL_Rect{ 426 - 32 - 8, 188 + 4 - 2, 32, 32 };
-						//kills_banner->setSize(SDL_Rect{ 426, 188, 182, 34 });
-					}
-				}
-			}
-
-			auto kills_left = subframe->findFrame("kills_left"); assert(kills_left);
-			kills_left->setActualSize(SDL_Rect{ 0, 0, 144, 182 });
-			kills_left->clearEntries();
-
-			auto kills_right = subframe->findFrame("kills_right"); assert(kills_right);
-			kills_right->setActualSize(SDL_Rect{ 0, 0, 144, 182 });
-			kills_right->clearEntries();
-
-			if ( auto kills_toggle_target = subframe->findButton("kills_toggle_target") )
-			{
-				if ( strcmp(kills_toggle_target->getText(), "") )
-				{
-					// look for the button with the score
-					if ( auto window = main_menu_frame->findFrame("leaderboards") )
-					{
-						if ( auto list = window->findFrame("list") )
-						{
-							if ( auto btn = list->findButton(kills_toggle_target->getText()) )
-							{
-								score = (score_t*)btn->getUserData();
-							}
-						}
-					}
-				}
-			}
-
-			if ( !score )
-			{
-				return false;
-			}
-
-			auto kills = kills_left;
-			char buf[1024];
-			if ( kills_show_proficiencies )
-			{
-				size_t numEntries = Player::SkillSheet_t::skillSheetData.skillEntries.size();
-				for ( size_t index = 0; index < NUMPROFICIENCIES / 2; ++index )
-				{
-					int loops = 1;
-					while ( loops >= 0 )
-					{
-						if ( index + loops * (NUMPROFICIENCIES / 2) >= numEntries )
-						{
-							--loops;
-							continue;
-						}
-						int c = Player::SkillSheet_t::skillSheetData.skillEntries[index + loops * (NUMPROFICIENCIES / 2)].skillId;
-						int val = score->stats->getProficiency(c);
-						snprintf(buf, sizeof(buf), "%3d %s", val, Player::SkillSheet_t::skillSheetData.skillEntries[index + loops * (NUMPROFICIENCIES / 2)].name.c_str());
-						auto skill = kills->addEntry(buf, true);
-						//skill->color = makeColor(203, 171, 101, 255);
-						if ( val >= SKILL_LEVEL_LEGENDARY )
-						{
-							skill->color = Player::SkillSheet_t::skillSheetData.legendTextColor;
-						}
-						else if ( val >= SKILL_LEVEL_EXPERT )
-						{
-							skill->color = Player::SkillSheet_t::skillSheetData.expertTextColor;
-						}
-						else if ( val >= SKILL_LEVEL_BASIC )
-						{
-							skill->color = Player::SkillSheet_t::skillSheetData.noviceTextColor;
-						}
-						else
-						{
-							skill->color = Player::SkillSheet_t::skillSheetData.defaultTextColor;
-						}
-						skill->text = buf;
-						skill->clickable = (kills == kills_left);
-						kills = (kills == kills_left) ? kills_right : kills_left;
-						--loops;
-					}
-				}
-			}
-			else
-			{
-				bool noKillsAtAll = true;
-				for ( int c = 0; c < NUMMONSTERS; ++c ) {
-					int num_kills = score->kills[c];
-					if ( c == LICH_FIRE || c == LICH_ICE ) {
-						continue;
-					}
-					if ( c == LICH ) {
-						num_kills += score->kills[LICH_FIRE] + score->kills[LICH_ICE];
-					}
-					if ( num_kills <= 0 ) {
-						continue;
-					}
-					auto name = num_kills == 1 ?
-						getMonsterLocalizedName((Monster)c) :
-						getMonsterLocalizedPlural((Monster)c);
-					snprintf(buf, sizeof(buf), "%3d %s", num_kills, name.c_str());
-					auto kill = kills->addEntry(buf, true);
-					kill->color = makeColor(203, 171, 101, 255);
-					kill->text = buf;
-					kill->clickable = (kills == kills_left);
-					kills = (kills == kills_left) ? kills_right : kills_left;
-					noKillsAtAll = false;
-				}
-				if ( noKillsAtAll ) {
-					auto entry = kills_left->addEntry("no_kills", true);
-					entry->color = makeColor(151, 115, 58, 255);
-					entry->text = Language::get(5281);
-				}
-			}
-			return true;
-		};
-
-		auto kills_toggle_left = subframe->addButton("kills_toggle_left");
-		kills_toggle_left->setSize(SDL_Rect{ kills_banner->getSize().x - 32 - 36, kills_banner->getSize().y + 6, 20, 30});
-		kills_toggle_left->setColor(makeColor(255, 255, 255, 255));
-		kills_toggle_left->setHighlightColor(makeColor(255, 255, 255, 255));
-		kills_toggle_left->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTiny_00.png");
-		kills_toggle_left->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTinyHigh_00.png");
-		kills_toggle_left->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTinyPress_00.png");
-		kills_toggle_left->setGlyphPosition(Widget::glyph_position_t::CENTERED_LEFT);
-		kills_toggle_left->setButtonsOffset(SDL_Rect{ -16, 0, 0, 0 });
-		kills_toggle_left->setWidgetSearchParent("leaderboards");
-		kills_toggle_left->setWidgetLeft("conduct");
-		kills_toggle_left->setWidgetDown("kills_left");
-		kills_toggle_left->setWidgetRight("kills_toggle_right");
-		kills_toggle_left->addWidgetAction("MenuCancel", "back_button");
-		kills_toggle_left->addWidgetAction("MenuAlt1", "delete_entry");
-		kills_toggle_left->addWidgetAction("MenuAlt2", "open_filters");
-		kills_toggle_left->addWidgetAction("MenuPageLeft", "tab_left");
-		kills_toggle_left->addWidgetAction("MenuPageRight", "tab_right");
-		kills_toggle_left->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		kills_toggle_left->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
-		kills_toggle_left->setCallback([](Button& button)
-			{
-				kills_show_proficiencies = !kills_show_proficiencies;
-				if ( kills_refresh(static_cast<Frame*>(button.getParent()), nullptr) )
-				{
-					soundActivate();
-				}
-			});
-
-		auto kills_toggle_target = subframe->addButton("kills_toggle_target");
-		kills_toggle_target->setDisabled(true);
-		kills_toggle_target->setInvisible(true);
-		kills_toggle_target->setText("");
-		kills_toggle_target->setSize(kills_toggle_left->getSize());
-
-		auto kills_toggle_right = subframe->addButton("kills_toggle_right");
-		kills_toggle_right->setSize(SDL_Rect{ kills_banner->getSize().x + 92, kills_banner->getSize().y + 6, 20, 30 });
-		kills_toggle_right->setColor(makeColor(255, 255, 255, 255));
-		kills_toggle_right->setHighlightColor(makeColor(255, 255, 255, 255));
-		kills_toggle_right->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTiny_00.png");
-		kills_toggle_right->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTinyHigh_00.png");
-		kills_toggle_right->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTinyPress_00.png");
-		kills_toggle_right->setGlyphPosition(Widget::glyph_position_t::CENTERED_RIGHT);
-		kills_toggle_right->setButtonsOffset(SDL_Rect{ 16, 0, 0, 0 });
-		kills_toggle_right->setWidgetSearchParent("leaderboards");
-		kills_toggle_right->setWidgetLeft("kills_toggle_left");
-		kills_toggle_right->setWidgetDown("kills_left");
-		kills_toggle_right->addWidgetAction("MenuCancel", "back_button");
-		kills_toggle_right->addWidgetAction("MenuAlt1", "delete_entry");
-		kills_toggle_right->addWidgetAction("MenuAlt2", "open_filters");
-		kills_toggle_right->addWidgetAction("MenuPageLeft", "tab_left");
-		kills_toggle_right->addWidgetAction("MenuPageRight", "tab_right");
-		kills_toggle_right->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		kills_toggle_right->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
-		kills_toggle_right->setCallback([](Button& button)
-			{
-				kills_show_proficiencies = !kills_show_proficiencies;
-				if ( kills_refresh(static_cast<Frame*>(button.getParent()), nullptr) )
-				{
-					soundActivate();
-				}
-			});
+		kills_banner->setText(Language::get(5278));
 
 		auto kills_left = subframe->addFrame("kills_left");
 		kills_left->setScrollBarsEnabled(false);
@@ -8529,28 +7283,16 @@ bind_failed:
 		kills_left->addWidgetMovement("MenuListCancel", "kills_left");
 		kills_left->addWidgetAction("MenuCancel", "back_button");
 		kills_left->addWidgetAction("MenuAlt1", "delete_entry");
-		kills_left->addWidgetAction("MenuAlt2", "open_filters");
         kills_left->addWidgetAction("MenuPageLeft", "tab_left");
         kills_left->addWidgetAction("MenuPageRight", "tab_right");
-		kills_left->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		kills_left->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+        kills_left->addWidgetAction("MenuPageLeftAlt", "category_left");
+        kills_left->addWidgetAction("MenuPageRightAlt", "category_right");
 		kills_left->setWidgetLeft("conduct");
 		kills_left->addSyncScrollTarget("kills_right");
         kills_left->setSelectedEntryColor(makeColor(101, 78, 39, 255));
 		kills_left->setSelectorOffset(SDL_Rect{-12, -4, 18, 0,});
 		kills_left->setScrollWithLeftControls(false);
 		kills_left->setClickable(true);
-		kills_left->setTickCallback([](Widget& widget){
-			auto frame = static_cast<Frame*>(&widget);
-			if ( frame->isSelected() )
-			{
-				frame->setAllowScrollBinds(true);
-			}
-			else
-			{
-				frame->setAllowScrollBinds(false);
-			}
-			});
 
 		auto kills_right = subframe->addFrame("kills_right");
 		kills_right->setScrollBarsEnabled(false);
@@ -8564,17 +7306,6 @@ bind_failed:
 		kills_right->setEntrySize(28);
 		kills_right->setBorder(0);
 		kills_right->setColor(0);
-		kills_right->setTickCallback([](Widget& widget) {
-			auto frame = static_cast<Frame*>(&widget);
-			if ( frame->isSelected() )
-			{
-				frame->setAllowScrollBinds(true);
-			}
-			else
-			{
-				frame->setAllowScrollBinds(false);
-			}
-			});
 
 		auto time_and_score_titles = subframe->addField("time_and_score_titles", 256);
 		time_and_score_titles->setFont(bigfont_outline);
@@ -8594,29 +7325,11 @@ bind_failed:
         enum BoardType {
             LOCAL_SINGLE,
             LOCAL_MULTI,
-            ONLINE_WORLD,
             ONLINE_FRIENDS,
-			ONLINE_ONESHOT,
-			ONLINE_UNLIMITED,
-			ONLINE_CHALLENGE
+            ONLINE_WORLD
         };
         static BoardType boardType;
         boardType = BoardType::LOCAL_SINGLE;
-
-#ifdef USE_PLAYFAB
-		if ( leaderboard_type == "lid_seed_oneshot" )
-		{
-			boardType = BoardType::ONLINE_ONESHOT;
-		}
-		else if ( leaderboard_type == "lid_seed_unlimited" )
-		{
-			boardType = BoardType::ONLINE_UNLIMITED;
-		}
-		else if ( leaderboard_type == "lid_seed_challenge" )
-		{
-			boardType = BoardType::ONLINE_CHALLENGE;
-		}
-#endif
 
         static auto updateStats = [](const Button& button, score_t* score){
             if (!score) {
@@ -8681,73 +7394,21 @@ bind_failed:
             };
             const int num_victories = sizeof(victories) / sizeof(victories[0]);
 
-			int which_victory = score->victory;
-			if ( score->victory == 100 )
-			{
-				which_victory = 4;
-			}
-			else if ( score->victory == 101 )
-			{
-				which_victory = 4;
-			}
-            else if (score->victory < 0 || score->victory >= num_victories) {
+            if (score->victory < 0 || score->victory >= num_victories) {
                 return;
             }
-            auto& victory = victories[which_victory];
+            auto& victory = victories[score->victory];
 
-            char victory_text[1024] = "";
-			if ( score->victory == 0 && score->stats->killer != KilledBy::UNKNOWN )
-			{
-				std::string cause_of_death = "";
-				switch ( score->stats->killer ) {
-					case KilledBy::MONSTER: {
-						if ( score->stats->killer_name.empty() ) 
-						{
-							if ( score->stats->killer_monster >= 0 && score->stats->killer_monster < NUMMONSTERS )
-							{
-								cause_of_death = getMonsterLocalizedName(score->stats->killer_monster);
-								cause_of_death[0] = (char)toupper((int)cause_of_death[0]);
-							}
-						}
-						else 
-						{
-							cause_of_death = score->stats->killer_name;
-						}
-						break;
-					}
-					case KilledBy::ITEM: {
-						if ( score->stats->killer_item >= 0 && score->stats->killer_item < NUMITEMS )
-						{
-							cause_of_death = items[score->stats->killer_item].getIdentifiedName();
-						}
-						break;
-					}
-					case KilledBy::FAILED_CHALLENGE:
-						cause_of_death = Language::get(6153);
-						break;
-					default: 
-					{
-						cause_of_death = Language::get(5794 + (int)score->stats->killer);
-						break;
-					}
-				}
-				snprintf(victory_text, sizeof(victory_text), Language::get(6057), score->stats->name, cause_of_death.c_str());
-			}
-			else
-			{
-				if ( score->victory == 100 )
-				{
-					snprintf(victory_text, sizeof(victory_text), Language::get(6166), score->stats->name);
-				}
-				else if ( score->victory == 101 )
-				{
-					snprintf(victory_text, sizeof(victory_text), Language::get(6165), score->stats->name);
-				}
-				else
-				{
-					snprintf(victory_text, sizeof(victory_text), victory.text, score->stats->name);
-				}
-			}
+            char victory_text[1024];
+            if (boardType == BoardType::LOCAL_SINGLE || boardType == BoardType::LOCAL_MULTI) {
+                snprintf(victory_text, sizeof(victory_text), victory.text, score->stats->name);
+            } else {
+#ifdef STEAMWORKS
+                const int index = (int)strtol(button.getName() + 3, nullptr, 10) - 1;
+                snprintf(victory_text, sizeof(victory_text), victory.text,
+                    g_SteamLeaderboards->leaderBoardSteamUsernames[index].c_str());
+#endif
+            }
 
             victory_plate_text->setText(victory_text);
             victory_plate_text->setTextColor(victory.textColor);
@@ -8861,26 +7522,50 @@ bind_failed:
                 character_attributes[c]->setText(buf);
 		    }
 
-			if ( auto kills_toggle_target = subframe->findButton("kills_toggle_target") )
-			{
-				kills_toggle_target->setText(button.getName());
-			}
-			kills_refresh(subframe, score);
+            auto kills_left = subframe->findFrame("kills_left"); assert(kills_left);
+		    kills_left->setActualSize(SDL_Rect{0, 0, 144, 182});
+		    kills_left->clearEntries();
+
+            auto kills_right = subframe->findFrame("kills_right"); assert(kills_right);
+		    kills_right->setActualSize(SDL_Rect{0, 0, 144, 182});
+		    kills_right->clearEntries();
+
+            bool noKillsAtAll = true;
+            auto kills = kills_left;
+            for (int c = 0; c < NUMMONSTERS; ++c) {
+                int num_kills = score->kills[c];
+                if (c == LICH_FIRE || c == LICH_ICE) {
+                    continue;
+                }
+                if (c == LICH) {
+                    num_kills += score->kills[LICH_FIRE] + score->kills[LICH_ICE];
+                }
+                if (num_kills <= 0) {
+                    continue;
+                }
+                auto name = num_kills == 1 ?
+                    getMonsterLocalizedName((Monster)c) :
+                    getMonsterLocalizedPlural((Monster)c);
+                snprintf(buf, sizeof(buf), "%3d %s", num_kills, name.c_str());
+                auto kill = kills->addEntry(buf, true);
+                kill->color = makeColor(203, 171, 101, 255);
+                kill->text = buf;
+                kill->clickable = (kills == kills_left);
+                kills = (kills == kills_left) ? kills_right : kills_left;
+                noKillsAtAll = false;
+            }
+            if (noKillsAtAll) {
+                auto entry = kills_left->addEntry("no_kills", true);
+                entry->color = makeColor(151, 115, 58, 255);
+                entry->text = Language::get(5281);
+            }
 
             const Uint32 time = score->completionTime / TICKS_PER_SECOND;
             const Uint32 hour = time / 3600;
             const Uint32 min = (time / 60) % 60;
             const Uint32 sec = time % 60;
 
-			int total_score = 0;
-			if ( score->totalscore >= 0 )
-			{
-				total_score = score->totalscore;
-			}
-			else
-			{
-				total_score = totalScore(score);
-			}
+            int total_score = totalScore(score);
 
 		    auto time_and_score = subframe->findField("time_and_score");
 		    assert(time_and_score);
@@ -8888,15 +7573,43 @@ bind_failed:
                 hour, min, sec, total_score);
             time_and_score->setText(buf);
             };
-       
+
+        // TODO: Replace these with new leaderboard categories
+        static const char* categories[] = {
+	        "None",
+	        "Fastest Time\nNormal", "Highest Score\nNormal",
+	        "Fastest Time\nMultiplayer", "Highest Score\nMultiplayer",
+	        "Fastest Time\nHell Route", "Highest Score\nHell Route",
+	        "Fastest Time\nHardcore", "Highest Score\nHardcore",
+	        "Fastest Time\nClassic", "Highest Score\nClassic",
+	        "Fastest Time\nClassic Hardcore", "Highest Score\nClassic Hardcore",
+	        "Fastest Time\nMultiplayer Classic", "Highest Score\nMultiplayer Classic",
+	        "Fastest Time\nMultiplayer Hell Route", "Highest Score\nMultiplayer Hell Route",
+	        "Fastest Time\nNormal - Monsters Only", "Highest Score\nNormal - Monsters Only",
+	        "Fastest Time\nMultiplayer - Monsters Only", "Highest Score\nMultiplayer - Monsters Only",
+	        "Fastest Time\nHell Route - Monsters Only", "Highest Score\nHell Route - Monsters Only",
+	        "Fastest Time\nHardcore - Monsters Only", "Highest Score\nHardcore - Monsters Only",
+	        "Fastest Time\nClassic - Monsters Only", "Highest Score\nClassic - Monsters Only",
+	        "Fastest Time\nClassic Hardcore - Monsters Only", "Highest Score\nClassic Hardcore - Monsters Only",
+            "Fastest Time\nMultiplayer Classic - Monsters Only", "Highest Score\nMultiplayer Classic - Monsters Only",
+	        "Fastest Time\nMultiplayer Hell Route - Monsters Only", "Highest Score\nMultiplayer Hell Route - Monsters Only",
+        };
+        static constexpr int num_categories = sizeof(categories) / sizeof(categories[0]);
+        static int category;
+        category = 1;
+        
         static auto set_links = [](const char* name){
             assert(main_menu_frame);
             auto window = main_menu_frame->findFrame("leaderboards"); assert(window);
             auto list = window->findFrame("list"); assert(list);
+            auto category_right = window->findButton("category_right"); assert(category_right);
+            auto category_left = window->findButton("category_left"); assert(category_left);
             auto delete_entry = window->findButton("delete_entry"); assert(delete_entry);
             auto slider = window->findSlider("scroll_slider"); assert(slider);
             auto subframe = window->findFrame("subframe"); assert(subframe);
             auto conduct = subframe->findFrame("conduct"); assert(conduct);
+            category_right->setWidgetUp(name);
+            category_left->setWidgetUp(name);
             delete_entry->setWidgetUp(name);
             slider->setWidgetRight(name);
             conduct->setWidgetLeft(name);
@@ -8904,33 +7617,14 @@ bind_failed:
 
         static const char* fmt = "  #%d %s";
 
-		static std::set<std::string> statChecks;
-		static ConsoleCommand ccmd_leaderboard_stat_checks(
-			"/leaderboard_stat_checks", "",
-			[](int argc, const char** argv) {
-				for ( auto& s : statChecks )
-				{
-					printlog("%s", s.c_str());
-				}
-				statChecks.clear();
-			});
-
-        static auto add_score = [](score_t* score, const char* name, const char* prev, const char* next, int index,
-			int rank, int selectIndex){
+        static auto add_score = [](score_t* score, const char* name, const char* prev, const char* next, int index){
             auto window = main_menu_frame->findFrame("leaderboards"); assert(window);
             auto list = window->findFrame("list"); assert(list);
 
             const int y = 6 + 38 * index;
 
             char buf[128];
-			if ( rank >= 0 )
-			{
-				snprintf(buf, sizeof(buf), fmt, rank + 1, name); // ranks 0 indexed
-			}
-			else
-			{
-				snprintf(buf, sizeof(buf), fmt, index + 1, name);
-			}
+            snprintf(buf, sizeof(buf), fmt, index + 1, name);
             
             if (index == 0) {
                 set_links(buf);
@@ -8951,11 +7645,10 @@ bind_failed:
             button->setWidgetSearchParent("leaderboards");
             button->addWidgetAction("MenuCancel", "back_button");
             button->addWidgetAction("MenuAlt1", "delete_entry");
-			button->addWidgetAction("MenuAlt2", "open_filters");
             button->addWidgetAction("MenuPageLeft", "tab_left");
             button->addWidgetAction("MenuPageRight", "tab_right");
-			button->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-			button->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+            button->addWidgetAction("MenuPageLeftAlt", "category_left");
+            button->addWidgetAction("MenuPageRightAlt", "category_right");
             button->setWidgetRight("conduct");
             button->setWidgetUp(prev ? prev : "");
             button->setWidgetDown(next ? next : "");
@@ -8974,7 +7667,7 @@ bind_failed:
                     if (b == &button) {
                         continue;
                     }
-					b->setTextColor(makeColor(203,171,101,255));
+                    b->setTextColor(makeColor(203,171,101,255));
                     b->setBackground("*images/ui/Main Menus/Leaderboards/AA_NameList_Unselected_00.png");
                 }
                 auto score = (score_t*)button.getUserData();
@@ -9013,20 +7706,14 @@ bind_failed:
                 }
                 });
 
-            auto size = list->getActualSize();
-            if (index == selectIndex) {
-				if ( !main_menu_frame->findFrame("binary_prompt") )
-				{
-					button->select();
-					size.y = std::max(0, y - 6);
-				}
-				button->setTextColor(makeColor(231, 213, 173, 255));
-				button->setBackground("*images/ui/Main Menus/Leaderboards/AA_NameList_Selected_00.png");
+            if (index == 0) {
+                button->select();
                 selectedScore = score;
                 updateStats(*button, score);
                 loadScore(score);
             }
 
+            auto size = list->getActualSize();
             size.h = std::max(list->getSize().h, y + 38);
             list->setActualSize(size);
             };
@@ -9087,7 +7774,7 @@ bind_failed:
 							auto next = (score_t*)node->list->first->element;
 							snprintf(next_buf, sizeof(next_buf), fmt, 1, next->stats->name);
 						}
-                        add_score(score, score->stats->name, prev_buf, next_buf, index, -1, 0);
+                        add_score(score, score->stats->name, prev_buf, next_buf, index);
                     }
                 } else {
                     auto field = window->findField("wait_message");
@@ -9103,68 +7790,21 @@ bind_failed:
                     set_links("");
                 }
             } else {
-#ifdef USE_PLAYFAB
-				if ( !playfabUser.bLoggedIn )
-				{
-					if ( playfabUser.authenticationRefresh > 0
-						&& playfabUser.authenticationRefresh < TICKS_PER_SECOND * 60 )
-					{
-						playfabUser.authenticationRefresh = 1; // try force login
-					}
-				}
-
-				scores_loaded = 0;
-				playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::CHALLENGE_BOARD_NONE;
-				if ( boardType == BoardType::ONLINE_FRIENDS )
-				{
-					playfabUser.leaderboardSearch.daily = true;
-				}
-				else if ( boardType == BoardType::ONLINE_WORLD )
-				{
-					playfabUser.leaderboardSearch.daily = false;
-				}
-				else
-				{
-					playfabUser.leaderboardSearch.daily = false;
-					if ( boardType == BoardType::ONLINE_ONESHOT )
-					{
-						playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_ONESHOT;
-					}
-					else if ( boardType == BoardType::ONLINE_UNLIMITED )
-					{
-						playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_UNLIMITED;
-					}
-					else if ( boardType == BoardType::ONLINE_CHALLENGE )
-					{
-						playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_CHALLENGE;
-					}
-				}
-				playfabUser.leaderboardData.currentSearch = playfabUser.leaderboardSearch.getLeaderboardID();
-				playfabUser.leaderboardData.currentDisplayName = playfabUser.leaderboardSearch.getLeaderboardDisplayName();
-				if ( playfabUser.leaderboardSearch.scoresNearMe )
-				{
-					//playfabUser.getLeaderboardAroundMe(playfabUser.leaderboardData.currentSearch);
-					playfabUser.checkLocalPlayerHasEntryOnLeaderboard(playfabUser.leaderboardData.currentSearch);
-				}
-				else
-				{
-					//playfabUser.getLeaderboardTop100(playfabUser.leaderboardData.currentSearch);
-					playfabUser.getLeaderboardTop100Alternate(playfabUser.leaderboardData.currentSearch);
-				}
-				auto field = window->findField("wait_message");
-				if ( !field ) {
-					field = window->addField("wait_message", 1024);
-					field->setFont(bigfont_outline);
-					field->setSize(SDL_Rect{ 30, 148, 932, 468 });
-					field->setJustify(Field::justify_t::CENTER);
-				}
-				field->setText(Language::get(5307));
-
-				if ( auto category_text = window->findField("category_text") )
-				{
-					category_text->setText(playfabUser.leaderboardData.currentDisplayName.c_str());
-				}
-				set_links("");
+#ifdef STEAMWORKS
+                scores_loaded = 0;
+                g_SteamLeaderboards->FindLeaderboard(
+                    CSteamLeaderboards::leaderboardNames[category].c_str());
+                auto field = window->findField("wait_message");
+                if (!field) {
+                    field = window->addField("wait_message", 1024);
+                    field->setFont(bigfont_outline);
+                    field->setText(Language::get(5307));
+                    field->setSize(SDL_Rect{30, 148, 932, 468});
+                    field->setJustify(Field::justify_t::CENTER);
+                } else {
+                    field->setText(Language::get(5307));
+                }
+                set_links("");
 #endif
             }
             };
@@ -9196,297 +7836,140 @@ bind_failed:
         auto category_text = window->addField("category_text", 256);
         category_text->setSize(panel_pos);
         category_text->setJustify(Field::justify_t::CENTER);
-		category_text->setPaddingPerLine(-2);
         category_text->setFont(smallfont_outline);
         category_text->setColor(makeColor(170, 134, 102, 255));
-#ifdef USE_PLAYFAB
-		playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::CHALLENGE_BOARD_NONE;
-		if ( boardType == BoardType::ONLINE_FRIENDS )
-		{
-			playfabUser.leaderboardSearch.daily = true;
-		}
-		else if ( boardType == BoardType::ONLINE_WORLD )
-		{
-			playfabUser.leaderboardSearch.daily = false;
-		}
-		else
-		{
-			playfabUser.leaderboardSearch.daily = false;
-			if ( boardType == BoardType::ONLINE_ONESHOT )
-			{
-				playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_ONESHOT;
-			}
-			else if ( boardType == BoardType::ONLINE_UNLIMITED )
-			{
-				playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_UNLIMITED;
-			}
-			else if ( boardType == BoardType::ONLINE_CHALLENGE )
-			{
-				playfabUser.leaderboardSearch.challengeBoard = PlayfabUser_t::LeaderboardSearch_t::ChallengeBoards::CHALLENGE_BOARD_CHALLENGE;
-			}
-			playfabUser.leaderboardSearch.applySavedChallengeSearchIfExists();
-		}
-		playfabUser.leaderboardData.currentSearch = playfabUser.leaderboardSearch.getLeaderboardID();
-		playfabUser.leaderboardData.currentDisplayName = playfabUser.leaderboardSearch.getLeaderboardDisplayName();
-        category_text->setText(playfabUser.leaderboardData.currentDisplayName.c_str());
-#endif
+        category_text->setText(categories[category]);
         category_text->setTickCallback(disableIfNotOnline);
         category_text->setInvisible(true);
 
+        auto category_left = window->addButton("category_left");
+        category_left->setSize(SDL_Rect{panel_pos.x - 24, 646, 20, 30});
+		category_left->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTiny_00.png");
+		category_left->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTinyHigh_00.png");
+		category_left->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_Button_LArrowTinyPress_00.png");
+		category_left->setColor(makeColor(255, 255, 255, 255));
+		category_left->setHighlightColor(makeColor(255, 255, 255, 255));
+		category_left->setWidgetSearchParent(window->getName());
+		category_left->setTickCallback(disableIfNotOnline);
+		category_left->setCallback([](Button& button){
+            if (!button.isInvisible()) {
+                soundActivate();
+                --category;
+                if (category <= 0) {
+                    category = num_categories - 1;
+                }
+                repopulate_list(boardType);
+                auto window = static_cast<Frame*>(button.getParent());
+                auto category_text = window->findField("category_text");
+                if (category_text) {
+                    category_text->setText(categories[category]);
+                }
+            }
+		    });
+        category_left->addWidgetAction("MenuCancel", "back_button");
+        category_left->addWidgetAction("MenuAlt1", "delete_entry");
+        category_left->addWidgetAction("MenuPageLeft", "tab_left");
+        category_left->addWidgetAction("MenuPageRight", "tab_right");
+        category_left->addWidgetAction("MenuPageLeftAlt", "category_left");
+        category_left->addWidgetAction("MenuPageRightAlt", "category_right");
+        category_left->setWidgetRight("category_right");
+        category_left->setInvisible(true);
+
+        auto category_right = window->addButton("category_right");
+        category_right->setSize(SDL_Rect{panel_pos.x + panel_pos.w + 4, 646, 20, 30});
+		category_right->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTiny_00.png");
+		category_right->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTinyHigh_00.png");
+		category_right->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_Button_RArrowTinyPress_00.png");
+		category_right->setColor(makeColor(255, 255, 255, 255));
+		category_right->setHighlightColor(makeColor(255, 255, 255, 255));
+		category_right->setTickCallback(disableIfNotOnline);
+		category_right->setCallback([](Button& button){
+            if (!button.isInvisible()) {
+                soundActivate();
+                ++category;
+                if (category >= num_categories) {
+                    category = 1;
+                }
+                repopulate_list(boardType);
+                auto window = static_cast<Frame*>(button.getParent());
+                auto category_text = window->findField("category_text");
+                if (category_text) {
+                    category_text->setText(categories[category]);
+                }
+            }
+		    });
+		category_right->setWidgetSearchParent(window->getName());
+        category_right->addWidgetAction("MenuCancel", "back_button");
+        category_right->addWidgetAction("MenuAlt1", "delete_entry");
+        category_right->addWidgetAction("MenuPageLeft", "tab_left");
+        category_right->addWidgetAction("MenuPageRight", "tab_right");
+        category_right->addWidgetAction("MenuPageLeftAlt", "category_left");
+        category_right->addWidgetAction("MenuPageRightAlt", "category_right");
+        category_right->setWidgetRight("delete_entry");
+        category_right->setWidgetLeft("category_left");
+        category_right->setInvisible(true);
+
         // poll for downloaded scores
-#ifdef USE_PLAYFAB
-		static ConsoleVariable<bool> cvar_leaderboard_show_id("/leaderboard_show_id", false);
-		list->setTickCallback([](Widget& widget) {
-			bool tryRefresh = false;
-			if ( playfabUser.leaderboardSearch.requiresRefresh )
-			{
-				tryRefresh = true;
-				playfabUser.leaderboardSearch.requiresRefresh = false;
-
-				if ( !playfabUser.bLoggedIn )
-				{
-					if ( playfabUser.authenticationRefresh > 0
-						&& playfabUser.authenticationRefresh < TICKS_PER_SECOND * 60 )
-					{
-						playfabUser.authenticationRefresh = 1; // try force login
-					}
-				}
-			}
-			if ( boardType == BoardType::LOCAL_MULTI
-				|| boardType == BoardType::LOCAL_SINGLE ) {
-				return;
-			}
-			auto window = static_cast<Frame*>(widget.getParent());
-			if ( !playfabUser.bLoggedIn )
-			{
-				auto field = window->findField("wait_message");
-				if ( !field ) {
-					field = window->addField("wait_message", 1024);
-					field->setFont(bigfont_outline);
-					field->setText(Language::get(6061));
-					field->setSize(SDL_Rect{ 30, 148, 932, 468 });
-					field->setJustify(Field::justify_t::CENTER);
-				}
-				else {
-					field->setText(Language::get(6061));
-				}
-				scores_loaded = 2;
-				return;
-			}
-
-			if ( tryRefresh )
-			{
-				repopulate_list(boardType);
-				return;
-			}
-
-			if ( scores_loaded == 0 ) {
-				scores_loaded++;
-			}
-			else if ( scores_loaded == 2 )
-			{
-				auto& leaderboard = playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch];
-				auto& leaderboardRanks = leaderboard.displayedRanks;
-				int num_scores = leaderboardRanks.size();
-				int index = -1;
-				for ( auto& entry : leaderboardRanks )
-				{
-					++index;
-					if ( !entry.readIntoScore )
-					{
-						if ( auto window = main_menu_frame->findFrame("leaderboards") )
-						{
-							if ( auto list = window->findFrame("list") )
-							{
-								char buf[128];
-								snprintf(buf, sizeof(buf), fmt, /*index + 1*/entry.rank + 1, entry.displayName.c_str());
-								if ( auto button = list->findButton(buf) )
-								{
-									if ( button->getUserData() == nullptr )
-									{
-										auto& info = leaderboard.playerData[entry.id];
-										info.hiscore_dummy_loading = true;
-										if ( info.hiscore_loadstatus == 0 )
-										{
-											if ( button->isPressed() 
-												|| 
-												(/*!isMouseVisible() 
-												&& */!strcmp(button->getBackground(), "*images/ui/Main Menus/Leaderboards/AA_NameList_Selected_00.png")) )
-											{
-												const int numEntriesRequest = 25;
-												leaderboard.requestPlayerData(numEntriesRequest * (index / numEntriesRequest), numEntriesRequest);
-												info.hiscore_loadstatus = 1;
-											}
-										}
-										if ( info.hiscore_loadstatus == 1 )
-										{
-											if ( selectedScore == nullptr )
-											{
-												if ( !strcmp(button->getBackground(), "*images/ui/Main Menus/Leaderboards/AA_NameList_Selected_00.png") )
-												{
-													if ( auto score = scoreConstructor(0, info) )
-													{
-														if ( *cvar_leaderboard_show_id )
-														{
-															strcpy(score->stats->name, entry.id.c_str());
-														}
-														button->setUserData(score);
-														selectedScore = score;
-														updateStats(*button, score);
-														loadScore(score);
-														entry.readIntoScore = true;
-													}
-													if ( entry.awaitingData )
-													{
-														auto field = window->findField("wait_message");
-														if ( !field ) {
-															field = window->addField("wait_message", 1024);
-															field->setFont(bigfont_outline);
-															field->setSize(SDL_Rect{ 30, 148, 932, 468 });
-															field->setJustify(Field::justify_t::CENTER);
-														}
-														Uint32 interval = ticks % int(1 * TICKS_PER_SECOND);
-														int numDots = (interval / (TICKS_PER_SECOND / 5));
-														std::string status = "";
-														while ( numDots >= 0 )
-														{
-															--numDots;
-															status += '.';
-														}
-														field->setText(status.c_str());
-													}
-													else
-													{
-														(void)window->remove("wait_message");
-													}
-												}
-											}
-										}
-									}
-								}
-							}
+#ifdef STEAMWORKS
+        list->setTickCallback([](Widget& widget){
+            if (boardType != BoardType::ONLINE_FRIENDS &&
+                boardType != BoardType::ONLINE_WORLD) {
+                return;
+            }
+            auto window = static_cast<Frame*>(widget.getParent());
+            if (scores_loaded == 0 && g_SteamLeaderboards->b_LeaderboardInit) {
+                scores_loaded++;
+                g_SteamLeaderboards->DownloadScores(
+                    boardType == BoardType::ONLINE_FRIENDS ?
+                    k_ELeaderboardDataRequestFriends :
+                    k_ELeaderboardDataRequestGlobal,
+                    0, CSteamLeaderboards::k_numEntriesToRetrieve);
+            }
+            else if (scores_loaded == 1 && g_SteamLeaderboards->b_ScoresDownloaded) {
+                scores_loaded++;
+                if (g_SteamLeaderboards->m_nLeaderboardEntries == 0) {
+                    auto field = window->findField("wait_message");
+                    if (!field) {
+                        field = window->addField("wait_message", 1024);
+                        field->setFont(bigfont_outline);
+                        field->setText(Language::get(5306));
+                        field->setSize(SDL_Rect{30, 148, 932, 468});
+                        field->setJustify(Field::justify_t::CENTER);
+                    } else {
+                        field->setText(Language::get(5306));
+                    }
+                } else {
+                    (void)window->remove("wait_message");
+                    int num_scores = g_SteamLeaderboards->m_nLeaderboardEntries;
+                    for (int index = 0; index < num_scores; ++index) {
+                        steamLeaderboardReadScore(g_SteamLeaderboards->downloadedTags[index]);
+                        auto score = scoreConstructor(clientnum);
+                        downloadedScores.scores.push_back(score);
+                        auto name = g_SteamLeaderboards->leaderBoardSteamUsernames[index].c_str();
+                        char prev_buf[128] = "";
+                        if (index > 0) {
+                            snprintf(prev_buf, sizeof(prev_buf), fmt, index,
+                                g_SteamLeaderboards->leaderBoardSteamUsernames[index - 1].c_str());
+                        } else {
+							snprintf(prev_buf, sizeof(prev_buf), fmt, num_scores,
+								g_SteamLeaderboards->leaderBoardSteamUsernames[num_scores - 1].c_str());
 						}
-					}
-				}
-			}
-			else if ( scores_loaded == 1
-				&& playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch].errorReceivingLeaderboard() )
-			{
-				auto field = window->findField("wait_message");
-				if ( !field ) {
-					field = window->addField("wait_message", 1024);
-					field->setFont(bigfont_outline);
-					field->setText(Language::get(6061));
-					field->setSize(SDL_Rect{ 30, 148, 932, 468 });
-					field->setJustify(Field::justify_t::CENTER);
-				}
-				else {
-					field->setText(Language::get(6061));
-				}
-				scores_loaded = 2;
-				return;
-			}
-			else if ( scores_loaded == 1 
-				&& (playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch].loading == false
-					&& playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch].playerDataLoading == false) )
-			{
-				scores_loaded++;
-				auto& leaderboard = playfabUser.leaderboardData.leaderboards[playfabUser.leaderboardData.currentSearch];
-				auto& leaderboardRanks = leaderboard.displayedRanks;
-				if ( leaderboardRanks.size() == 0 ) {
-					auto field = window->findField("wait_message");
-					int msg = 5306;
-					if ( playfabUser.leaderboardSearch.scoresNearMe
-						&& playfabUser.playerCheckLeaderboardData.find(playfabUser.leaderboardData.currentSearch) != playfabUser.playerCheckLeaderboardData.end()
-						&& !playfabUser.playerCheckLeaderboardData[playfabUser.leaderboardData.currentSearch].hasData )
-					{
-						msg = 6108; // you do not have any scores to compare
-					}
-					else
-					{
-						msg = 6151;
-					}
-					if ( !field ) {
-						field = window->addField("wait_message", 1024);
-						field->setFont(bigfont_outline);
-						field->setText(Language::get(msg));
-						field->setSize(SDL_Rect{ 30, 148, 932, 468 });
-						field->setJustify(Field::justify_t::CENTER);
-					}
-					else {
-						field->setText(Language::get(msg));
-					}
-				}
-				else {
-					(void)window->remove("wait_message");
-					int num_scores = leaderboardRanks.size();
-					int index = -1;
-
-					int selectIndex = 0;
-					if ( playfabUser.leaderboardSearch.scoresNearMe )
-					{
-						for ( auto& entry : leaderboardRanks )
-						{
-							++index;
-							if ( entry.id == playfabUser.currentUser )
-							{
-								selectIndex = index;
-								break;
-							}
+                        char next_buf[128] = "";
+                        if (index < num_scores - 1) {
+                            snprintf(next_buf, sizeof(next_buf), fmt, index + 2,
+                                g_SteamLeaderboards->leaderBoardSteamUsernames[index + 1].c_str());
+                        } else {
+							snprintf(next_buf, sizeof(next_buf), fmt, 1,
+								g_SteamLeaderboards->leaderBoardSteamUsernames[0].c_str());
 						}
-					}
-
-					index = -1;
-					for ( auto& entry : leaderboardRanks )
-					{
-						++index;
-						auto& info = leaderboard.playerData[entry.id];
-						info.hiscore_dummy_loading = true;
-						auto score = scoreConstructor(0, info);
-						auto name = entry.displayName.c_str();
-
-						if ( score )
-						{
-							if ( *cvar_leaderboard_show_id )
-							{
-								strcpy(score->stats->name, entry.id.c_str());
-							}
-						}
-
-						char prev_buf[128] = "";
-						if ( index > 0 ) {
-							snprintf(prev_buf, sizeof(prev_buf), fmt, entry.rank,
-								leaderboardRanks[index - 1].displayName.c_str());
-						}
-						else {
-							snprintf(prev_buf, sizeof(prev_buf), fmt, leaderboardRanks[num_scores - 1].rank + 1,
-								leaderboardRanks[num_scores - 1].displayName.c_str());
-						}
-						char next_buf[128] = "";
-						if ( index < num_scores - 1 ) {
-							snprintf(next_buf, sizeof(next_buf), fmt, entry.rank + 2,
-								leaderboardRanks[index + 1].displayName.c_str());
-						}
-						else {
-							snprintf(next_buf, sizeof(next_buf), fmt, leaderboardRanks[0].rank + 1,
-								leaderboardRanks[0].displayName.c_str());
-						}
-						entry.readIntoScore = score != nullptr;
-						add_score(score, name, prev_buf, next_buf, index, entry.rank, selectIndex);
-						if ( num_scores == 0 ) {
-							set_links("");
-						}
-						if ( selectIndex >= 25 && index == selectIndex)
-						{
-							const int numEntriesRequest = 25;
-							leaderboard.requestPlayerData(numEntriesRequest * (selectIndex / numEntriesRequest), numEntriesRequest);
-							leaderboard.playerData[entry.id].hiscore_loadstatus = 1;
-						}
-					}
-
-				}
-			}
-		});
+                        add_score(score, name, prev_buf, next_buf, index);
+                    }
+                    if (num_scores == 0) {
+                        set_links("");
+                    }
+                }
+            }
+            });
 #endif
 
 #define TAB_FN(X) [](Button& button){\
@@ -9500,33 +7983,17 @@ bind_failed:
             const char* text;
             void (*func)(Button& button);
         };
-		static std::vector<Tab> tabs;
-		tabs = {
+        static const Tab tabs[] = {
             {"local", Language::get(5308), TAB_FN(BoardType::LOCAL_SINGLE)},
             {"lan", Language::get(5309), TAB_FN(BoardType::LOCAL_MULTI)},
-#ifdef USE_PLAYFAB
-            {"world", Language::get(5311), TAB_FN(BoardType::ONLINE_WORLD)},
-            {"friends", Language::get(5310), TAB_FN(BoardType::ONLINE_FRIENDS)},
+#ifdef STEAMWORKS
+            // TODO for now these are disabled, @wallofjustice make better leaderboards in future
+            //{"friends", Language::get(5310), TAB_FN(BoardType::ONLINE_FRIENDS)},
+            //{"world", Language::get(5311), TAB_FN(BoardType::ONLINE_WORLD)},
 #endif
         };
-
-		if ( boardType == BoardType::ONLINE_ONESHOT )
-		{
-			tabs.clear();
-			tabs.push_back({ "oneshot", Language::get(6110), TAB_FN(BoardType::ONLINE_ONESHOT) });
-		}
-		else if ( boardType == BoardType::ONLINE_UNLIMITED )
-		{
-			tabs.clear();
-			tabs.push_back({ "unlimited", Language::get(6111), TAB_FN(BoardType::ONLINE_UNLIMITED) });
-		}
-		else if ( boardType == BoardType::ONLINE_CHALLENGE )
-		{
-			tabs.clear();
-			tabs.push_back({ "challenge", Language::get(6112), TAB_FN(BoardType::ONLINE_CHALLENGE) });
-		}
-
-        for (int c = 0; c < tabs.size(); ++c) {
+        static constexpr int num_tabs = sizeof(tabs) / sizeof(tabs[0]);
+        for (int c = 0; c < num_tabs; ++c) {
             Button* tab = window->addButton(tabs[c].name);
             tab->setText(tabs[c].text);
             tab->setFont(bigfont_outline);
@@ -9540,12 +8007,12 @@ bind_failed:
 			tab->setTickCallback([](Widget& widget){
 			    auto tab = static_cast<Button*>(&widget);
 			    int index = 0;
-			    for (; index < tabs.size(); ++index) {
+			    for (; index < num_tabs; ++index) {
 			        if (!strcmp(tabs[index].name, tab->getName())) {
 			            break;
 			        }
 			    }
-			    if (index == (int)boardType || tabs.size() == 1) {
+			    if (index == (int)boardType) {
 					tab->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_Subtitle_Selected_00.png");
 					tab->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_Button_Subtitle_SelectedHigh_00.png");
 					tab->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_Button_Subtitle_SelectedPress_00.png");
@@ -9559,23 +8026,22 @@ bind_failed:
 			    }
 			    });
 
-            const int fullw = 184 * tabs.size() + 20 * (tabs.size() - 1);
-            const int xbegin = (992 - fullw) / 2;
+            constexpr int fullw = 184 * num_tabs + 20 * (num_tabs - 1);
+            constexpr int xbegin = (992 - fullw) / 2;
             const int x = xbegin + (184 + 20) * c;
             tab->setSize(SDL_Rect{x, 70, 184, 64});
 
 		    tab->setWidgetSearchParent(window->getName());
             tab->addWidgetAction("MenuCancel", "back_button");
             tab->addWidgetAction("MenuAlt1", "delete_entry");
-			tab->addWidgetAction("MenuAlt2", "open_filters");
             tab->addWidgetAction("MenuPageLeft", "tab_left");
             tab->addWidgetAction("MenuPageRight", "tab_right");
-			tab->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-			tab->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+            tab->addWidgetAction("MenuPageLeftAlt", "category_left");
+            tab->addWidgetAction("MenuPageRightAlt", "category_right");
             if (c > 0) {
                 tab->setWidgetLeft(tabs[c - 1].name);
             }
-            if (c < tabs.size() - 1) {
+            if (c < num_tabs - 1) {
                 tab->setWidgetRight(tabs[c + 1].name);
             }
         }
@@ -9591,25 +8057,18 @@ bind_failed:
 		tab_left->setCallback([](Button& button){
 		    auto window = static_cast<Frame*>(button.getParent());
             int tab_index = static_cast<int>(boardType);
-			if ( boardType == BoardType::ONLINE_ONESHOT || boardType == BoardType::ONLINE_UNLIMITED || boardType == BoardType::ONLINE_CHALLENGE )
-			{
-				return;
-			}
             if (tab_index > 0) {
-				if ( auto tab = window->findButton(tabs[tab_index - 1].name) )
-				{
-					tab->activate();
-				}
+                auto tab = window->findButton(tabs[tab_index - 1].name); assert(tab);
+                tab->activate();
             }
 		    });
 		tab_left->setWidgetSearchParent(window->getName());
         tab_left->addWidgetAction("MenuCancel", "back_button");
         tab_left->addWidgetAction("MenuAlt1", "delete_entry");
-		tab_left->addWidgetAction("MenuAlt2", "open_filters");
         tab_left->addWidgetAction("MenuPageLeft", "tab_left");
         tab_left->addWidgetAction("MenuPageRight", "tab_right");
-		tab_left->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		tab_left->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+        tab_left->addWidgetAction("MenuPageLeftAlt", "category_left");
+        tab_left->addWidgetAction("MenuPageRightAlt", "category_right");
         tab_left->setWidgetRight(tabs[0].name);
 
 		auto tab_right = window->addButton("tab_right");
@@ -9623,35 +8082,19 @@ bind_failed:
 		tab_right->setCallback([](Button& button){
 		    auto window = static_cast<Frame*>(button.getParent());
             int tab_index = static_cast<int>(boardType);
-			if ( boardType == BoardType::ONLINE_ONESHOT || boardType == BoardType::ONLINE_UNLIMITED || boardType == BoardType::ONLINE_CHALLENGE )
-			{
-				return;
-			}
-            if (tab_index < tabs.size() - 1) {
-				if ( auto tab = window->findButton(tabs[tab_index + 1].name) )
-				{
-					tab->activate();
-				}
+            if (tab_index < num_tabs - 1) {
+                auto tab = window->findButton(tabs[tab_index + 1].name); assert(tab);
+                tab->activate();
             }
 		    });
 		tab_right->setWidgetSearchParent(window->getName());
         tab_right->addWidgetAction("MenuCancel", "back_button");
         tab_right->addWidgetAction("MenuAlt1", "delete_entry");
-		tab_right->addWidgetAction("MenuAlt2", "open_filters");
         tab_right->addWidgetAction("MenuPageLeft", "tab_left");
         tab_right->addWidgetAction("MenuPageRight", "tab_right");
-		tab_right->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		tab_right->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
-        tab_right->setWidgetLeft(tabs[tabs.size() - 1].name);
-
-		if ( boardType == BoardType::ONLINE_ONESHOT || boardType == BoardType::ONLINE_UNLIMITED || boardType == BoardType::ONLINE_CHALLENGE )
-		{
-			tab_left->setDisabled(true);
-			tab_left->setInvisible(true);
-
-			tab_right->setDisabled(true);
-			tab_right->setInvisible(true);
-		}
+        tab_right->addWidgetAction("MenuPageLeftAlt", "category_left");
+        tab_right->addWidgetAction("MenuPageRightAlt", "category_right");
+        tab_right->setWidgetLeft(tabs[num_tabs - 1].name);
 
         auto slider = window->addSlider("scroll_slider");
         slider->setRailSize(SDL_Rect{38, 170, 30, 420});
@@ -9681,11 +8124,10 @@ bind_failed:
         slider->setWidgetSearchParent("leaderboards");
         slider->addWidgetAction("MenuCancel", "back_button");
         slider->addWidgetAction("MenuAlt1", "delete_entry");
-		slider->addWidgetAction("MenuAlt2", "open_filters");
         slider->addWidgetAction("MenuPageLeft", "tab_left");
         slider->addWidgetAction("MenuPageRight", "tab_right");
-		slider->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		slider->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+        slider->addWidgetAction("MenuPageLeftAlt", "category_left");
+        slider->addWidgetAction("MenuPageRightAlt", "category_right");
 
 		auto delete_entry = window->addButton("delete_entry");
 		delete_entry->setSize(SDL_Rect{740, 630, 164, 62});
@@ -9703,8 +8145,7 @@ bind_failed:
                     &topscores : &topscoresMultiplayer;
                 widget.setInvisible(scores->first == nullptr);
             }
-            else
-			{
+            else if (boardType == BoardType::ONLINE_FRIENDS || boardType == BoardType::ONLINE_WORLD) {
                 widget.setInvisible(true);
             }
 		    });
@@ -9768,42 +8209,9 @@ bind_failed:
         delete_entry->addWidgetAction("MenuAlt1", "delete_entry");
         delete_entry->addWidgetAction("MenuPageLeft", "tab_left");
         delete_entry->addWidgetAction("MenuPageRight", "tab_right");
-		delete_entry->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		delete_entry->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
-
-		auto open_filters = window->addButton("open_filters");
-		open_filters->setSize(SDL_Rect{ 84, 630, 164, 62 });
-		open_filters->setBackground("*images/ui/Main Menus/Leaderboards/AA_Button_00.png");
-		open_filters->setBackgroundHighlighted("*images/ui/Main Menus/Leaderboards/AA_ButtonHigh_00.png");
-		open_filters->setBackgroundActivated("*images/ui/Main Menus/Leaderboards/AA_ButtonPress_00.png");
-		open_filters->setColor(makeColor(255, 255, 255, 255));
-		open_filters->setHighlightColor(makeColor(255, 255, 255, 255));
-		open_filters->setGlyphPosition(Widget::glyph_position_t::CENTERED_BOTTOM);
-		open_filters->setFont(smallfont_outline);
-		open_filters->setText(Language::get(6079));
-		open_filters->setTickCallback([](Widget& widget) {
-			if ( boardType == BoardType::LOCAL_SINGLE || boardType == BoardType::LOCAL_MULTI ) {
-				widget.setInvisible(true);
-			}
-			else 
-			{
-				widget.setInvisible(false);
-			}
-		});
-		open_filters->setCallback([](Button& button) {
-			if ( boardType == BoardType::LOCAL_SINGLE || boardType == BoardType::LOCAL_MULTI )
-			{
-				return;
-			}
-			createOnlineLeaderboardsFilter();
-		});
-		open_filters->setWidgetSearchParent(window->getName());
-		open_filters->addWidgetAction("MenuCancel", "back_button");
-		open_filters->addWidgetAction("MenuAlt2", "open_filters");
-		open_filters->addWidgetAction("MenuPageLeft", "tab_left");
-		open_filters->addWidgetAction("MenuPageRight", "tab_right");
-		open_filters->addWidgetAction("MenuPageLeftAlt", "kills_toggle_left");
-		open_filters->addWidgetAction("MenuPageRightAlt", "kills_toggle_right");
+        delete_entry->addWidgetAction("MenuPageLeftAlt", "category_left");
+        delete_entry->addWidgetAction("MenuPageRightAlt", "category_right");
+        delete_entry->setWidgetLeft("category_right");
 
         Button* tab = window->findButton(tabs[0].name);
         tab->select();
@@ -9862,7 +8270,7 @@ bind_failed:
 
 		// set tooltip text
 		char tooltip_buf[256] = { '\0' };
-		const int percent = (num_unlocked * 100) / std::max(1, num_achievements);
+		const int percent = (num_unlocked * 100) / num_achievements;
 		snprintf(tooltip_buf, sizeof(tooltip_buf), Language::get(5319),
 			num_unlocked, num_achievements, percent);
 		auto tooltip = window->findField("tooltip"); assert(tooltip);
@@ -10084,7 +8492,7 @@ bind_failed:
 /******************************************************************************/
 
 	static void archivesLeaderboards(Button& button) {
-        createLeaderboards("");
+        createLeaderboards();
 	}
 
 	static void archivesDungeonCompendium(Button& button) {
@@ -10477,8 +8885,6 @@ bind_failed:
         return frame;
     }
 
-	static std::map<int, std::string> lobbyCustomScenarioClient;
-
 	static void disconnectFromLobby(bool informRemotes = true) {
 		if (informRemotes) {
 			if (multiplayer == SERVER) {
@@ -10523,10 +8929,7 @@ bind_failed:
 	    }
 		currentLobbyType = LobbyType::None;
 
-		lobbyCustomScenarioClient.clear();
 		gameModeManager.currentSession.restoreSavedServerFlags();
-		gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-		gameModeManager.currentSession.challengeRun.reset();
 
 	    closeNetworkInterfaces();
 
@@ -10685,13 +9088,6 @@ bind_failed:
 
 	static void saveLastCharacter(const int index, int multiplayer)
 	{
-		if ( gameModeManager.currentSession.challengeRun.isActive()
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-		{
-			return;
-		}
-
 		if ( !loadingsavegame )
 		{
 			if ( multiplayer != SINGLE )
@@ -10863,105 +9259,6 @@ bind_failed:
 	    }
 	}
 
-	static void sendCustomScenarioOverNet(const int playernum)
-	{
-		if ( multiplayer == SERVER ) {
-			if ( playernum == 0 ) {
-				return;
-			}
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				// packet header
-				memcpy(net_packet->data, "CSCN", 4);
-				Uint8 sequence = 0;
-				// encode name
-				int chunksize = 256;
-				const size_t len = gameModeManager.currentSession.challengeRun.scenarioStr.size();
-				const int numchunks = 1 + (len / chunksize);
-				for ( int c = 0; c < len; c += chunksize )
-				{
-					sequence += 1;
-
-					if ( c + chunksize > len )
-					{
-						chunksize = len - c;
-					}
-					net_packet->data[4] = sequence; // chunk index
-					net_packet->data[4] |= ((numchunks) << 4); // upper bits num chunks
-
-					std::string substr = gameModeManager.currentSession.challengeRun.scenarioStr.substr(c, chunksize);
-					stringCopy((char*)net_packet->data + 5, substr.c_str(),
-						256 + 1, substr.size());
-
-					net_packet->len = 5 + substr.size();
-
-					for ( int i = 1; i < MAXPLAYERS; i++ ) {
-						if ( client_disconnected[i] ) {
-							continue;
-						}
-						if ( playernum != i )
-						{
-							continue;
-						}
-						net_packet->address.host = net_clients[i - 1].host;
-						net_packet->address.port = net_clients[i - 1].port;
-						sendPacketSafe(net_sock, -1, net_packet, i - 1);
-					}
-				}
-			}
-			else
-			{
-				// packet header
-				memcpy(net_packet->data, "CSCN", 4);
-				net_packet->data[4] = 0;
-				net_packet->len = 5;
-				for ( int i = 1; i < MAXPLAYERS; i++ ) {
-					if ( client_disconnected[i] ) {
-						continue;
-					}
-					if ( playernum != i )
-					{
-						continue;
-					}
-					net_packet->address.host = net_clients[i - 1].host;
-					net_packet->address.port = net_clients[i - 1].port;
-					sendPacketSafe(net_sock, -1, net_packet, i - 1);
-				}
-			}
-		}
-		 else if ( multiplayer == CLIENT ) {
-			 memcpy(net_packet->data, "CSCN", 4);
-			 net_packet->data[4] = playernum;
-			 net_packet->len = 5;
-			 net_packet->address.host = net_server.host;
-			 net_packet->address.port = net_server.port;
-			 sendPacketSafe(net_sock, -1, net_packet, 0);
-		}
-	}
-
-	static void sendCustomSeedOverNet()
-	{
-		if ( multiplayer == SERVER ) {
-			// packet header
-			memcpy(net_packet->data, "CSEE", 4);
-
-			// encode name
-			stringCopy((char*)net_packet->data + 4, gameModeManager.currentSession.seededRun.seedString.c_str(),
-				32, gameModeManager.currentSession.seededRun.seedString.size());
-			// send packet
-			net_packet->len = 36;
-
-			for ( int i = 1; i < MAXPLAYERS; i++ ) {
-				if ( client_disconnected[i] ) {
-					continue;
-				}
-				net_packet->address.host = net_clients[i - 1].host;
-				net_packet->address.port = net_clients[i - 1].port;
-				sendPacketSafe(net_sock, -1, net_packet, i - 1);
-			}
-		}
-	}
-
 	static void sendSvFlagsOverNet() {
 	    if (multiplayer == SERVER) {
 	        memcpy(net_packet->data, "SVFL", 4);
@@ -11002,12 +9299,9 @@ bind_failed:
 				net_packet->address.port = net_clients[c - 1].port;
 				sendPacketSafe(net_sock, -1, net_packet, c - 1);
 			}
-
-			sendCustomSeedOverNet();
 	    } else if (multiplayer == CLIENT) {
 	        memcpy(net_packet->data, "SVFL", 4);
-			net_packet->data[4] = clientnum;
-			net_packet->len = 5;
+			net_packet->len = 4;
 			net_packet->address.host = net_server.host;
 			net_packet->address.port = net_server.port;
 			sendPacketSafe(net_sock, -1, net_packet, 0);
@@ -11278,11 +9572,6 @@ bind_failed:
             }
 		}},
 
-		// client requesting game scenario
-		{ 'CSCN', []() {
-			sendCustomScenarioOverNet(net_packet->data[4]);
-		} },
-
 		// client requesting new svFlags
 		{'SVFL', [](){
 			// update svFlags for everyone
@@ -11315,8 +9604,6 @@ bind_failed:
 				net_packet->address.port = net_clients[c - 1].port;
 				sendPacketSafe(net_sock, -1, net_packet, c - 1);
 			}
-
-			sendCustomSeedOverNet();
 		}},
 
 		// keepalive
@@ -11471,12 +9758,6 @@ bind_failed:
 #endif
 					}
 					sendSvFlagsOverNet();
-					sendCustomScenarioOverNet(playerNum);
-				}
-				else if ( result == NetworkingLobbyJoinRequestResult::NET_LOBBY_JOIN_DIRECTIP_SUCCESS )
-				{
-					sendSvFlagsOverNet();
-					sendCustomScenarioOverNet(playerNum);
 				}
 
 			    // assume success after this point
@@ -11512,7 +9793,6 @@ bind_failed:
             createDummyMainMenu();
 	        lobbyWindowSvFlags = SDLNet_Read32(&net_packet->data[4]);
 	        uniqueGameKey = SDLNet_Read32(&net_packet->data[8]);
-			uniqueLobbyKey = SDLNet_Read32(&net_packet->data[13]);
 	        local_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 	        net_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 	        beginFade(FadeDestination::GameStart);
@@ -11658,78 +9938,6 @@ bind_failed:
 		// update mod achievement status
 		{ 'MODS', []() {
 			Mods::lobbyDisableSteamAchievements = net_packet->data[4] == 0 ? false : true;
-		} },
-
-		// update custom scenario string
-		{ 'CSCN', []() {
-			int sequence = (net_packet->data[4] & 0xF);
-			int numchunks = (net_packet->data[4] >> 4) & 0xF;
-			if ( numchunks == 0 )
-			{
-				lobbyCustomScenarioClient.clear();
-				if ( gameModeManager.currentSession.challengeRun.isActive() )
-				{
-					gameModeManager.currentSession.challengeRun.reset();
-					disconnectFromLobby(true);
-					destroyMainMenu();
-					createMainMenu(false);
-					connectionErrorPrompt(Language::get(6124));
-					return;
-				}
-				gameModeManager.currentSession.challengeRun.reset();
-				return;
-			}
-			char buf[512];
-			stringCopy(buf, (char*)(&net_packet->data[5]), sizeof(buf), std::max(0, (int)net_packet->len - 5));
-			lobbyCustomScenarioClient[sequence] = buf;
-			if ( (int)lobbyCustomScenarioClient.size() == numchunks )
-			{
-				// parse the scenario.
-				std::string str = "";
-				for ( int i = 1; i <= numchunks; ++i )
-				{
-					str += lobbyCustomScenarioClient[i];
-				}
-				gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN);
-				gameModeManager.currentSession.challengeRun.setup(str);
-				lobbyCustomScenarioClient.clear();
-
-				if ( gameModeManager.currentSession.challengeRun.isActive() )
-				{
-					if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-						&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-					{
-						client_classes[clientnum] = gameModeManager.currentSession.challengeRun.classnum;
-					}
-					if ( gameModeManager.currentSession.challengeRun.race >= 0
-						&& gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-					{
-						stats[clientnum]->playerRace = gameModeManager.currentSession.challengeRun.race;
-						if ( stats[clientnum]->playerRace != RACE_HUMAN )
-						{
-							stats[clientnum]->appearance = 0;
-						}
-						if ( stats[clientnum]->playerRace == RACE_INCUBUS )
-						{
-							stats[clientnum]->sex = sex_t::MALE;
-						}
-						else if ( stats[clientnum]->playerRace == RACE_SUCCUBUS )
-						{
-							stats[clientnum]->sex = sex_t::FEMALE;
-						}
-					}
-					stats[clientnum]->clearStats();
-					initClass(clientnum);
-					sendPlayerOverNet();
-				}
-			}
-		} },
-
-		// update custom seed string
-		{ 'CSEE', []() {
-			char buf[64];
-			stringCopy(buf, (char*)(&net_packet->data[4]), sizeof(buf), 32);
-			gameModeManager.currentSession.seededRun.setup(buf);
 		}},
 
 	    // keepalive
@@ -11881,7 +10089,6 @@ bind_failed:
                     case MAXPLAYERS + 3: error_str = Language::get(1381); break;
                     case MAXPLAYERS + 4: error_str = Language::get(1382); break;
                     case MAXPLAYERS + 5: error_str = Language::get(1383); break;
-					case MAXPLAYERS + 6: error_str = Language::get(6123); break;
                     default: error_str = Language::get(1384); break;
                     }
 
@@ -12204,10 +10411,9 @@ bind_failed:
 		    SDLNet_Write32(0, &net_packet->data[57]);
 	    }
 	    SDLNet_Write32(loadingsavegame, &net_packet->data[61]); // send unique game key
-		SDLNet_Write32(loadinglobbykey, &net_packet->data[65]); // send unique lobby key
 	    net_packet->address.host = net_server.host;
 	    net_packet->address.port = net_server.port;
-	    net_packet->len = 69;
+	    net_packet->len = 65;
 
 	    /*if (!directConnect) {
 		    sendPacket(net_sock, -1, net_packet, 0);
@@ -12238,7 +10444,6 @@ bind_failed:
 	    client_keepalive[0] = ticks;
 		PingNetworkStatus_t::reset();
 		Mods::lobbyDisableSteamAchievements = false;
-		lobbyCustomScenarioClient.clear();
 
 	    // open wait prompt
         cancellablePrompt("connect_prompt", "", "Cancel", [](Widget& widget){
@@ -12884,7 +11089,7 @@ failed:
 			return;
 		}
 
-		static char buf[32000];
+		static char buf[16000];
 		const int count = (int)fp->read(buf, sizeof(buf[0]), sizeof(buf) - 1);
 		buf[count] = '\0';
 		rapidjson::StringStream is(buf);
@@ -13368,138 +11573,22 @@ failed:
 	    }
     }
 
-	static void race_achievement_required_error(int classnum)
-	{
-		char buf[256];
-		std::string achName = "";
-		switch ( classnum )
-		{
-		case CLASS_CONJURER:
-			achName = achievementNames["BARONY_ACH_BONY_BARON"];
-			break;
-		case CLASS_ACCURSED:
-			achName = achievementNames["BARONY_ACH_BUCKTOOTH_BARON"];
-			break;
-		case CLASS_MESMER:
-			achName = achievementNames["BARONY_ACH_BOMBSHELL_BARON"];
-			break;
-		case CLASS_BREWER:
-			achName = achievementNames["BARONY_ACH_BLEATING_BARON"];
-			break;
-		case CLASS_MACHINIST:
-			achName = achievementNames["BARONY_ACH_BOILERPLATE_BARON"];
-			break;
-		case CLASS_PUNISHER:
-			achName = achievementNames["BARONY_ACH_BAD_BOY_BARON"];
-			break;
-		case CLASS_SHAMAN:
-			achName = achievementNames["BARONY_ACH_BAYOU_BARON"];
-			break;
-		case CLASS_HUNTER:
-			achName = achievementNames["BARONY_ACH_BUGGAR_BARON"];
-			break;
-		default:
-			break;
-		}
-
-		snprintf(buf, sizeof(buf), Language::get(6171), achName.c_str());
-		auto prompt = errorPrompt(buf, Language::get(5884),
-			[](Button& button) {
-				soundCancel();
-		closeMono();
-			});
-		if ( auto txt = prompt->findField("text") )
-		{
-			SDL_Rect pos = txt->getSize();
-			pos.y -= 8;
-			pos.h += 8;
-			txt->setSize(pos);
-		}
-	}
-
-	static bool race_button_challenge_check_fn(int race, int challengeClass)
-	{
-		bool allowPick = true;
-		if ( race == RACE_HUMAN )
-		{
-			return true;
-		}
-		if ( race != RACE_SKELETON && challengeClass == CLASS_CONJURER )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_SKELETON);
-		}
-		else if ( race != RACE_VAMPIRE && challengeClass == CLASS_ACCURSED )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_VAMPIRE);
-		}
-		else if ( race != RACE_SUCCUBUS && challengeClass == CLASS_MESMER )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_SUCCUBUS);
-		}
-		else if ( race != RACE_GOATMAN && challengeClass == CLASS_BREWER )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_GOATMAN);
-		}
-		else if ( race != RACE_AUTOMATON && challengeClass == CLASS_MACHINIST )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_AUTOMATON);
-		}
-		else if ( race != RACE_INCUBUS && challengeClass == CLASS_PUNISHER )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_INCUBUS);
-		}
-		else if ( race != RACE_GOBLIN && challengeClass == CLASS_SHAMAN )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_GOBLIN);
-		}
-		else if ( race != RACE_INSECTOID && challengeClass == CLASS_HUNTER )
-		{
-			allowPick = isAchievementUnlockedForClassUnlock(RACE_INSECTOID);
-		}
-		return allowPick;
-	}
-
 	static void race_button_fn(Button& button, bool override_dlc) {
         const int index = button.getOwner();
         const bool wasHuman = stats[index]->playerRace == RACE_HUMAN;
 		auto frame = static_cast<Frame*>(button.getParent()); assert(frame);
         bool success = false;
-		bool fixedRace = gameModeManager.currentSession.challengeRun.isActive()
-			&& gameModeManager.currentSession.challengeRun.race >= 0 && gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID;
-		bool fixedClass = gameModeManager.currentSession.challengeRun.isActive()
-			&& gameModeManager.currentSession.challengeRun.classnum >= 0 && gameModeManager.currentSession.challengeRun.classnum <= NUMCLASSES;
-
 		for (int c = 0; c < num_races; ++c) {
 			auto race = Language::get(5369 + c);
 			if (strcmp(button.getName(), race) == 0) {
-				if ( fixedRace && !override_dlc && gameModeManager.currentSession.challengeRun.race != c )
-				{
-					// this class is not available to the player
-					button.setPressed(false);
-					errorPrompt(Language::get(6136), Language::get(5884),
-						[](Button& button) {
-							soundCancel();
-							closeMono();
-						});
-					return;
-				}
-				else if ( !override_dlc && !fixedRace &&
-					((!enabledDLCPack1 && c >= 1 && c <= 4) ||
-						(!enabledDLCPack2 && c >= 5 && c <= 8)) ) {
+				if (!override_dlc &&
+                    ((!enabledDLCPack1 && c >= 1 && c <= 4) ||
+					(!enabledDLCPack2 && c >= 5 && c <= 8))) {
 					// this class is not available to the player
 					button.setPressed(false);
 					openDLCPrompt(c >= 5 ? 1 : 0);
 					return;
-				}
-				else if ( fixedClass && !override_dlc && c >= 1
-					&& !race_button_challenge_check_fn(c, gameModeManager.currentSession.challengeRun.classnum) )
-				{
-					button.setPressed(false);
-					race_achievement_required_error(gameModeManager.currentSession.challengeRun.classnum);
-					return;
-				} 
-				else 
-				{
+				} else {
                     success = true;
                     if (stats[index]->playerRace != c) {
                         stats[index]->playerRace = c;
@@ -13555,16 +11644,7 @@ failed:
 					if (isCharacterValidFromDLC(*stats[index], client_classes[index]) != VALID_OK_CHARACTER) {
 						// perhaps the class is not valid for this race.
 						// if so, change the class to the default (Barbarian)
-						client_classes[index] = 0; // TODO CHALLENGE RUN
-
-						if ( gameModeManager.currentSession.challengeRun.isActive() )
-						{
-							if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-								&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-							{
-								client_classes[index] = gameModeManager.currentSession.challengeRun.classnum;
-							}
-						}
+						client_classes[index] = 0;
 					}
 				}
 				break;
@@ -13623,10 +11703,10 @@ failed:
 		if (stats[index]->playerRace == RACE_SUCCUBUS) {
 		    auto subframe = card->findFrame("subframe");
 		    auto succubus = subframe ? subframe->findButton("Succubus") : nullptr;
-			if (succubus) {
-				succubus->setPressed(false);
-			}
-			if (enabledDLCPack2) {
+		    if (succubus) {
+			    succubus->setPressed(false);
+		    }
+		    if (enabledDLCPack2) {
 			    stats[index]->playerRace = RACE_INCUBUS;
 			    auto race = card->findButton("race");
 			    if (race) {
@@ -13823,6 +11903,7 @@ failed:
 		header->setText(Language::get(5954));
 		header->setJustify(Field::justify_t::CENTER);
 
+		
 		const char* game_settings_text[] = {
 			Language::get(5378), // disable hunger
 			Language::get(5379), // disable minotaurs
@@ -13836,6 +11917,8 @@ failed:
 			Language::get(5386), // cheats
 #endif
 		};
+
+		
 
 		int num_settings = sizeof(game_settings_text) / sizeof(game_settings_text[0]);
 
@@ -13872,24 +11955,13 @@ failed:
 			if (c == 0) {
 				setting->select();
 			}
-            
+			
             setting->setUserData((void*)(intptr_t)c);
 			setting->setDisabled(index != 0);
 			switch (c) {
 			case 0:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_HUNGER) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(!allSettings.hunger_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_HUNGER) )
-					{
-						soundError();
-						button.setPressed(!allSettings.hunger_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.hunger_enabled = !button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.hunger_enabled = !button.isPressed();});
                 if (multiplayer != CLIENT) {
                     setting->setTickCallback([](Widget& widget) {
 						if (!main_menu_frame) {
@@ -13902,124 +11974,36 @@ failed:
                 }
 				break;
 			case 1:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_MINOTAURS) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(!allSettings.minotaur_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_MINOTAURS) )
-					{
-						soundError();
-						button.setPressed(!allSettings.minotaur_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.minotaur_enabled = !button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.minotaur_enabled = !button.isPressed();});
 				break;
 			case 2:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_LIFESAVING) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(allSettings.extra_life_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_LIFESAVING) )
-					{
-						soundError();
-						button.setPressed(allSettings.extra_life_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.extra_life_enabled = button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.extra_life_enabled = button.isPressed();});
 				break;
 			case 3:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_KEEPINVENTORY) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(allSettings.keep_inventory_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_KEEPINVENTORY) )
-					{
-						soundError();
-						button.setPressed(allSettings.keep_inventory_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.keep_inventory_enabled = button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.keep_inventory_enabled = button.isPressed();});
 				break;
 			case 4:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_TRAPS) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(!allSettings.random_traps_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_TRAPS) )
-					{
-						soundError();
-						button.setPressed(!allSettings.random_traps_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.random_traps_enabled = !button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.random_traps_enabled = !button.isPressed();});
 				break;
 			case 5:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_FRIENDLYFIRE) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(!allSettings.friendly_fire_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_FRIENDLYFIRE) )
-					{
-						soundError();
-						button.setPressed(!allSettings.friendly_fire_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.friendly_fire_enabled = !button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.friendly_fire_enabled = !button.isPressed();});
 				break;
 			case 6:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_CLASSIC) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(allSettings.classic_mode_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_CLASSIC) )
-					{
-						soundError();
-						button.setPressed(allSettings.classic_mode_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.classic_mode_enabled = button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.classic_mode_enabled = button.isPressed();});
 				break;
 			case 7:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_HARDCORE) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(allSettings.hardcore_mode_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_HARDCORE) )
-					{
-						soundError();
-						button.setPressed(allSettings.hardcore_mode_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.hardcore_mode_enabled = button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.hardcore_mode_enabled = button.isPressed();});
 				break;
 			case 8:
-				if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_CHEATS) )
-				{
-					label->setColor(makeColor(128, 128, 128, 255));
-				}
 				setting->setPressed(allSettings.cheats_enabled);
-				setting->setCallback([](Button& button){
-					if ( gameModeManager.isServerflagDisabledForCurrentMode(SV_FLAG_CHEATS) )
-					{
-						soundError();
-						button.setPressed(allSettings.cheats_enabled);
-						return;
-					}
-					soundCheckmark(); allSettings.cheats_enabled = button.isPressed();});
+				setting->setCallback([](Button& button){soundCheckmark(); allSettings.cheats_enabled = button.isPressed();});
 				break;
 			}
 		}
@@ -14031,13 +12015,7 @@ failed:
 		achievements->setTickCallback([](Widget& widget){
 			Field* achievements = static_cast<Field*>(&widget);
             if (multiplayer != CLIENT) {
-				if ( gameModeManager.currentSession.challengeRun.isActive()
-					&& gameModeManager.currentSession.challengeRun.lid.find("challenge") != std::string::npos )
-				{
-					achievements->setColor(makeColor(180, 37, 37, 255));
-					achievements->setText(Language::get(6137));
-				}
-				else if ( Mods::disableSteamAchievements ) {
+				if ( Mods::disableSteamAchievements ) {
 					achievements->setColor(makeColor(180, 37, 37, 255));
 					achievements->setText(Language::get(5387));
 				} else if ( allSettings.cheats_enabled ||
@@ -14049,13 +12027,7 @@ failed:
                     achievements->setText(Language::get(5390));
                 }
             } else {
-				if ( gameModeManager.currentSession.challengeRun.isActive()
-					&& gameModeManager.currentSession.challengeRun.lid.find("challenge") != std::string::npos )
-				{
-					achievements->setColor(makeColor(180, 37, 37, 255));
-					achievements->setText(Language::get(6137));
-				}
-				else if ( Mods::disableSteamAchievements ) {
+				if ( Mods::disableSteamAchievements ) {
 					achievements->setColor(makeColor(180, 37, 37, 255));
 					achievements->setText(Language::get(5387));
 				} else if ( Mods::lobbyDisableSteamAchievements ) {
@@ -14124,8 +12096,7 @@ failed:
 		const bool local = currentLobbyType == LobbyType::LobbyLocal || currentLobbyType == LobbyType::LobbyJoined;
 		const bool online = currentLobbyType == LobbyType::LobbyOnline;
 
-		const int height = 580;
-		auto card = initCharacterCard(index, height);
+		auto card = initCharacterCard(index, 489);
         if (!card) {
             return;
         }
@@ -14143,9 +12114,9 @@ failed:
 		(void)createBackWidget(card,[](Button& button){soundCancel(); back_fn(button.getOwner());});
 
 		auto backdrop = card->addImage(
-			card->getActualSize(),
+			(SDL_Rect{ 0, 0, 324, 489 }),
 			0xffffffff,
-			"*images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Window01.png",
+			"*images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Window00.png",
 			"backdrop"
 		);
 
@@ -14155,17 +12126,10 @@ failed:
 		header->setText(Language::get(5391));
 		header->setJustify(Field::justify_t::CENTER);
 
-		auto gamerules_header = card->addField("gamerules_header", 64);
-		gamerules_header->setSize(SDL_Rect{ 30, 65, 264, 50 });
-		gamerules_header->setFont(smallfont_outline);
-		gamerules_header->setText(Language::get(6053));
-		gamerules_header->setHJustify(Field::justify_t::CENTER);
-		gamerules_header->setVJustify(Field::justify_t::TOP);
-
 		auto custom_difficulty = card->addButton("custom_difficulty");
 		custom_difficulty->setColor(makeColor(255, 255, 255, 255));
 		custom_difficulty->setHighlightColor(makeColor(255, 255, 255, 255));
-		custom_difficulty->setSize(SDL_Rect{102, gamerules_header->getSize().y + 23, 120, 48});
+		custom_difficulty->setSize(SDL_Rect{102, 68, 120, 48});
 		custom_difficulty->setBackground("*images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Customize00A.png");
 		custom_difficulty->setBackgroundHighlighted("*images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_CustomizeHigh00A.png");
 		custom_difficulty->setBackgroundActivated("*images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_CustomizePress00A.png");
@@ -14177,15 +12141,7 @@ failed:
 		custom_difficulty->addWidgetAction("MenuPageLeftAlt", "privacy");
 		custom_difficulty->setWidgetBack("back_button");
 		custom_difficulty->setWidgetUp("hard");
-		if ( index != 0 || gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-		{
-			custom_difficulty->setWidgetDown(online ? "invite" : "player_count_2");
-		}
-		else
-		{
-			custom_difficulty->setWidgetDown("seed");
-		}
+		custom_difficulty->setWidgetDown(online ? "invite" : "player_count_2");
 		custom_difficulty->setWidgetRight("custom");
 		custom_difficulty->setCallback([](Button& button){soundActivate(); characterCardGameFlagsMenu(button.getOwner());});
 		custom_difficulty->setTickCallback([](Widget& widget){
@@ -14200,180 +12156,11 @@ failed:
 			});
 		custom_difficulty->select();
 
-		auto customseed_header = card->addField("customseed_header", 64);
-		customseed_header->setSize(SDL_Rect{ 30, gamerules_header->getSize().y + 112, 264, 50 });
-		customseed_header->setFont(smallfont_outline);
-		customseed_header->setText(Language::get(6054));
-		customseed_header->setHJustify(Field::justify_t::CENTER);
-		customseed_header->setVJustify(Field::justify_t::TOP);
-
-		if ( index != 0 || gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-		{
-			auto seed_box = card->addImage(
-				SDL_Rect{ 64, customseed_header->getSize().y + 23, 196, 36 },
-				0xffffffff,
-				"*images/ui/Main Menus/Play/PlayerCreation/SeedField_Inactive_00.png",
-				"seed_box"
-			);
-
-			std::string name = index != 0 ? "customseed_client_text" : "customseed_server_text";
-			auto customseed_client_text = card->addField(name.c_str(), 32);
-			customseed_client_text->setSize(SDL_Rect{ seed_box->pos.x + 2, seed_box->pos.y + 4, seed_box->pos.w - 4, 28 });
-			customseed_client_text->setFont(smallfont_outline);
-			customseed_client_text->setText(Language::get(6055));
-			customseed_client_text->setHJustify(Field::justify_t::CENTER);
-			customseed_client_text->setVJustify(Field::justify_t::CENTER);
-			customseed_client_text->setColor(makeColor(255, 255, 255, 255));
-			customseed_client_text->setBackgroundColor(makeColor(32, 35, 43, 255));
-			customseed_client_text->setTickCallback([](Widget& widget) {
-				auto field = static_cast<Field*>(&widget);
-				auto parent = static_cast<Frame*>(widget.getParent());
-
-				size_t old_len = gameModeManager.currentSession.seededRun.seedString.length();
-				size_t new_len = strlen(field->getText());
-				if ( gameModeManager.currentSession.seededRun.seedString == "" )
-				{
-					field->setText(Language::get(6056));
-					gameModeManager.currentSession.seededRun.reset();
-				}
-				else if ( new_len != old_len || (gameModeManager.currentSession.seededRun.seedString != field->getText()) )
-				{
-					gameModeManager.currentSession.seededRun.setup(gameModeManager.currentSession.seededRun.seedString);
-					if ( !strcmp(field->getName(), "customseed_server_text") )
-					{
-						sendCustomSeedOverNet();
-					}
-					field->setText(gameModeManager.currentSession.seededRun.seedString.c_str());
-				}
-
-				if ( gameModeManager.currentSession.seededRun.seed == 0 )
-				{
-					field->setColor(makeColor(128, 128, 128, 255));
-				}
-				else
-				{
-					field->setColor(makeColor(255, 255, 255, 255));
-				}
-			});
-		}
-		else if ( index == 0 )
-		{
-			auto seed_box = card->addImage(
-				SDL_Rect{ 40, customseed_header->getSize().y + 23, 196, 36 },
-				0xffffffff,
-				"*images/ui/Main Menus/Play/PlayerCreation/SeedField_00.png",
-				"seed_box"
-			);
-
-			auto seed_tip = card->addField("seed_tip", 32);
-			seed_tip->setSize(SDL_Rect{ seed_box->pos.x + 2, seed_box->pos.y + 4, seed_box->pos.w - 4, 28 });
-			seed_tip->setFont(smallfont_outline);
-			seed_tip->setText(Language::get(6055));
-			seed_tip->setHJustify(Field::justify_t::LEFT);
-			seed_tip->setVJustify(Field::justify_t::CENTER);
-			seed_tip->setColor(makeColor(166, 123, 81, 127));
-			seed_tip->setBackgroundColor(makeColor(52, 30, 22, 255));
-			seed_tip->setTickCallback([](Widget& widget) {
-				auto seed_tip = static_cast<Field*>(&widget);
-				auto parent = static_cast<Frame*>(widget.getParent());
-				auto field = parent->findField("seed");
-				if ( field && field->getText()[0] != '\0' ) {
-					seed_tip->setText("");
-				}
-				else {
-					seed_tip->setText(Language::get(6055));
-				}
-				});
-
-			static auto seed_field_fn = [](const char* text, int index) {
-				size_t old_len = gameModeManager.currentSession.seededRun.seedString.length();
-				size_t new_len = strlen(text);
-				if ( new_len != old_len || (gameModeManager.currentSession.seededRun.seedString != text) )
-				{
-					gameModeManager.currentSession.seededRun.setup(text);
-					sendCustomSeedOverNet();
-				}
-			};
-
-			auto seed_field = card->addField("seed", 24);
-			seed_field->setGlyphPosition(Widget::glyph_position_t::CENTERED_RIGHT);
-			seed_field->setSelectorOffset(SDL_Rect{ -7, -7, 7, 7 });
-			seed_field->setButtonsOffset(SDL_Rect{ 11, 0, 0, 0 });
-			seed_field->setScroll(true);
-			seed_field->setGuide(Language::get(6055));
-			seed_field->setFont(smallfont_outline);
-			seed_field->setText(gameModeManager.currentSession.seededRun.seedString.c_str());
-			seed_field->setSize(seed_tip->getSize());
-			seed_field->setColor(makeColor(166, 123, 81, 255));
-			//seed_field->setBackgroundColor(makeColor(52, 30, 22, 255));
-			//seed_field->setBackgroundSelectAllColor(makeColor(52, 30, 22, 255));
-			//seed_field->setBackgroundActivatedColor(makeColor(52, 30, 22, 255));
-			seed_field->setHJustify(Field::justify_t::LEFT);
-			seed_field->setVJustify(Field::justify_t::CENTER);
-			seed_field->setEditable(true);
-			seed_field->setWidgetSearchParent(name.c_str());
-			seed_field->addWidgetAction("MenuPageRightAlt", "chat");
-			seed_field->addWidgetAction("MenuPageLeftAlt", "privacy");
-			seed_field->setWidgetBack("back_button");
-			seed_field->setWidgetUp("custom_difficulty");
-			seed_field->setWidgetDown(online ? "invite" : "player_count_2");
-			seed_field->setWidgetRight("randomize_seed");
-			seed_field->setCallback([](Field& field) {seed_field_fn(field.getText(), field.getOwner()); });
-			seed_field->setTickCallback([](Widget& widget) {
-				Field* field = static_cast<Field*>(&widget);
-				seed_field_fn(field->getText(), field->getOwner());
-			});
-
-			auto randomize_seed = card->addButton("randomize_seed");
-			randomize_seed->setColor(makeColor(255, 255, 255, 255));
-			randomize_seed->setHighlightColor(makeColor(255, 255, 255, 255));
-			randomize_seed->setBackground("*images/ui/Main Menus/Play/PlayerCreation/Finalize_Icon_Randomize_00.png");
-			randomize_seed->setBackgroundHighlighted("*images/ui/Main Menus/Play/PlayerCreation/Finalize_Icon_RandomizeHigh_00.png");
-			randomize_seed->setBackgroundActivated("*images/ui/Main Menus/Play/PlayerCreation/Finalize_Icon_RandomizePress_00.png");
-			randomize_seed->setSize(SDL_Rect{ 238, seed_field->getSize().y - 12, 54, 54});
-			randomize_seed->setWidgetSearchParent(name.c_str());
-			randomize_seed->addWidgetAction("MenuPageRightAlt", "chat");
-			randomize_seed->addWidgetAction("MenuPageLeftAlt", "privacy");
-			randomize_seed->setWidgetBack("back_button");
-			randomize_seed->setWidgetUp("custom_difficulty");
-			randomize_seed->setWidgetDown(online ? "invite" : "player_count_2");
-			randomize_seed->setWidgetLeft("seed");
-			static auto randomize_seed_fn = [](Button& button, int index) {
-				auto& prefixes = GameModeManager_t::CurrentSession_t::SeededRun_t::prefixes;
-				auto& suffixes = GameModeManager_t::CurrentSession_t::SeededRun_t::suffixes;
-				char buf[64] = "";
-				if ( !prefixes.empty() && !suffixes.empty() )
-				{
-					auto choice1 = RNG.uniform(0, (int)prefixes.size() - 1);
-					auto prefix = prefixes[choice1].c_str();
-
-					auto choice2 = RNG.uniform(0, (int)suffixes.size() - 1);
-					auto suffix = suffixes[choice2].c_str();
-					
-					snprintf(buf, sizeof(buf), "%s %s", prefix, suffix);
-				}
-				seed_field_fn(buf, index);
-				auto card = static_cast<Frame*>(button.getParent());
-				auto field = card->findField("seed"); assert(field);
-				field->setText(buf);
-			};
-			randomize_seed->setCallback([](Button& button) {
-				if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-					|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-				{
-					soundError();
-					return;
-				}
-				soundActivate(); randomize_seed_fn(button, button.getOwner()); 
-			});
-		}
-
 		auto invite_label = card->addField("invite_label", 64);
 #ifdef NINTENDO
-		invite_label->setSize(SDL_Rect{ 82, height - 266, 122, 26 });
+		invite_label->setSize(SDL_Rect{ 82, 158, 122, 26 });
 #else
-		invite_label->setSize(SDL_Rect{ 82, height - 278, 122, 26 });
+		invite_label->setSize(SDL_Rect{ 82, 144, 122, 26 });
 #endif
 		invite_label->setFont(smallfont_outline);
 		invite_label->setText(Language::get(5393));
@@ -14382,7 +12169,7 @@ failed:
 			invite_label->setColor(makeColor(70, 62, 59, 255));
 
 			auto invite = card->addImage(
-				SDL_Rect{204, height - 278, 26, 26},
+				SDL_Rect{204, 144, 26, 26},
 				0xffffffff,
 				"*images/ui/Main Menus/sublist_item-locked.png",
 				"invite"
@@ -14392,9 +12179,9 @@ failed:
 
 			auto invite = card->addButton("invite");
 #ifdef NINTENDO
-			invite->setSize(SDL_Rect{ 202, height - 268, 30, 30 });
+			invite->setSize(SDL_Rect{ 202, 156, 30, 30 });
 #else
-			invite->setSize(SDL_Rect{ 202, height - 280, 30, 30 });
+			invite->setSize(SDL_Rect{ 202, 142, 30, 30 });
 #endif
 			invite->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
 			invite->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
@@ -14410,15 +12197,7 @@ failed:
 			invite->addWidgetAction("MenuPageRightAlt", "chat");
 			invite->addWidgetAction("MenuPageLeftAlt", "privacy");
 			invite->setWidgetBack("back_button");
-			if ( index != 0 || gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-				|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-			{
-				invite->setWidgetUp("custom_difficulty");
-			}
-			else
-			{
-				invite->setWidgetUp("seed");
-			}
+			invite->setWidgetUp("custom_difficulty");
 #ifdef NINTENDO
 			invite->setWidgetDown("open");
 #else
@@ -14477,7 +12256,7 @@ failed:
 
 #ifndef NINTENDO
 		auto friends_label = card->addField("friends_label", 64);
-		friends_label->setSize(SDL_Rect{82, height - 246, 122, 26});
+		friends_label->setSize(SDL_Rect{82, 176, 122, 26});
 		friends_label->setFont(smallfont_outline);
 		friends_label->setText(Language::get(5394));
 		friends_label->setJustify(Field::justify_t::CENTER);
@@ -14485,7 +12264,7 @@ failed:
 			friends_label->setColor(makeColor(70, 62, 59, 255));
 
 			auto friends = card->addImage(
-				SDL_Rect{204, height - 246, 26, 26},
+				SDL_Rect{204, 176, 26, 26},
 				0xffffffff,
 				"*images/ui/Main Menus/sublist_item-locked.png",
 				"friends"
@@ -14494,7 +12273,7 @@ failed:
 			friends_label->setColor(makeColor(166, 123, 81, 255));
 
 			auto friends = card->addButton("friends");
-			friends->setSize(SDL_Rect{202, height - 248, 30, 30});
+			friends->setSize(SDL_Rect{202, 174, 30, 30});
 			friends->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
 			friends->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
 			friends->setBackgroundActivated("*images/ui/Main Menus/sublist_item-unpickedPress.png");
@@ -14569,9 +12348,9 @@ failed:
 
 		auto open_label = card->addField("open_label", 64);
 #ifdef NINTENDO
-		open_label->setSize(SDL_Rect{ 82, height - 226, 122, 26 });
+		open_label->setSize(SDL_Rect{ 82, 198, 122, 26 });
 #else
-		open_label->setSize(SDL_Rect{ 82, height - 214, 122, 26 });
+		open_label->setSize(SDL_Rect{ 82, 208, 122, 26 });
 #endif
 		open_label->setFont(smallfont_outline);
 		open_label->setText(Language::get(5395));
@@ -14580,7 +12359,7 @@ failed:
 			open_label->setColor(makeColor(70, 62, 59, 255));
 
 			auto open = card->addImage(
-				SDL_Rect{204, height - 214, 26, 26},
+				SDL_Rect{204, 208, 26, 26},
 				0xffffffff,
 				"*images/ui/Main Menus/sublist_item-locked.png",
 				"open"
@@ -14590,9 +12369,9 @@ failed:
 
 			auto open = card->addButton("open");
 #ifdef NINTENDO
-			open->setSize(SDL_Rect{ 202, height - 228, 30, 30 });
+			open->setSize(SDL_Rect{ 202, 196, 30, 30 });
 #else
-			open->setSize(SDL_Rect{ 202, height - 216, 30, 30 });
+			open->setSize(SDL_Rect{ 202, 216, 30, 30 });
 #endif
 			open->setBackground("*images/ui/Main Menus/sublist_item-unpicked.png");
 			open->setBackgroundHighlighted("*images/ui/Main Menus/sublist_item-unpickedHigh.png");
@@ -14672,7 +12451,7 @@ failed:
 		}
 
 		auto player_count_label = card->addField("player_count_label", 64);
-		player_count_label->setSize(SDL_Rect{40, height - 158, 116, 40});
+		player_count_label->setSize(SDL_Rect{40, 287, 116, 40});
 		player_count_label->setFont(smallfont_outline);
 		player_count_label->setText(Language::get(6018));
 		player_count_label->setJustify(Field::justify_t::CENTER);
@@ -14680,7 +12459,7 @@ failed:
         for (int c = 0; c < 3; ++c) {
             const std::string button_name = std::string("player_count_") + std::to_string(c + 2);
 		    auto player_count = card->addButton(button_name.c_str());
-		    player_count->setSize(SDL_Rect{156 + 44 * c, height - 158, 40, 40});
+		    player_count->setSize(SDL_Rect{189 + 33 * c, 277, 30, 30});
 		    player_count->setFont(smallfont_outline);
 		    player_count->setText(std::to_string(c + 2).c_str());
 		    player_count->setBorder(0);
@@ -14695,15 +12474,7 @@ failed:
 			player_count->addWidgetAction("MenuPageRightAlt", "chat");
 			player_count->addWidgetAction("MenuPageLeftAlt", "privacy");
 			player_count->setWidgetBack("back_button");
-			if ( index != 0 || gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-				|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-			{
-				player_count->setWidgetUp(online ? "open" : "seed");
-			}
-			else
-			{
-				player_count->setWidgetUp(online ? "open" : "custom_difficulty");
-			}
+			player_count->setWidgetUp(online ? "open" : "custom_difficulty");
 		    player_count->setWidgetLeft((std::string("player_count_") + std::to_string(c + 1)).c_str());
 		    player_count->setWidgetRight((std::string("player_count_") + std::to_string(c + 3)).c_str());
 		    player_count->setWidgetDown((std::string("kick_player_") + std::to_string(c + 2)).c_str());
@@ -14717,6 +12488,10 @@ failed:
 							lockSlot(1, false);
 							lockSlot(2, true);
 							lockSlot(3, true);
+							lockSlot(4, true);
+							lockSlot(5, true);
+							lockSlot(6, true);
+							lockSlot(7, true);
 							soundActivate();
 						} else {
 							if (!client_disconnected[2] && !client_disconnected[3]) {
@@ -14728,6 +12503,10 @@ failed:
 										lockSlot(1, false);
 										lockSlot(2, true);
 										lockSlot(3, true);
+										lockSlot(4, true);
+										lockSlot(5, true);
+										lockSlot(6, true);
+										lockSlot(7, true);
 										soundActivate();
 										closeBinary();
 										},
@@ -14744,6 +12523,10 @@ failed:
 										lockSlot(1, false);
 										lockSlot(2, true);
 										lockSlot(3, true);
+										lockSlot(4, true);
+										lockSlot(5, true);
+										lockSlot(6, true);
+										lockSlot(7, true);
 										soundActivate();
 										closeBinary();
 										},
@@ -14760,6 +12543,10 @@ failed:
 										lockSlot(1, false);
 										lockSlot(2, true);
 										lockSlot(3, true);
+										lockSlot(4, true);
+										lockSlot(5, true);
+										lockSlot(6, true);
+										lockSlot(7, true);
 										soundActivate();
 										closeBinary();
 										},
@@ -14777,6 +12564,10 @@ failed:
 							lockSlot(1, false);
 							lockSlot(2, false);
 							lockSlot(3, true);
+							lockSlot(4, true);
+							lockSlot(5, true);
+							lockSlot(6, true);
+							lockSlot(7, true);
 							soundActivate();
 						} else {
 							char prompt[1024];
@@ -14786,6 +12577,10 @@ failed:
 									lockSlot(1, false);
 									lockSlot(2, false);
 									lockSlot(3, true);
+									lockSlot(4, true);
+									lockSlot(5, true);
+									lockSlot(6, true);
+									lockSlot(7, true);
 									soundActivate();
 									closeBinary();
 									},
@@ -14793,7 +12588,7 @@ failed:
 									soundCancel();
 									closeBinary();
 									});
-						}
+								}
 						});
 					break;
 				case 2:
@@ -14801,112 +12596,311 @@ failed:
 						lockSlot(1, false);
 						lockSlot(2, false);
 						lockSlot(3, false);
+						lockSlot(4, true);
+						lockSlot(5, true);
+						lockSlot(6, true);
+						lockSlot(7, true);
+						soundActivate();
+						});
+					break;
+				
+
+				}
+			}
+        }
+		for (int k = 0; k < 4; ++k) {
+			const std::string button_name = std::string("player_count_") + std::to_string(k + 5);
+			auto player_count = card->addButton(button_name.c_str());
+			player_count->setSize(SDL_Rect{ 156 + 33 * k, 310, 30, 30 });
+			player_count->setFont(smallfont_outline);
+			player_count->setText(std::to_string(k + 5).c_str());
+			player_count->setBorder(0);
+			player_count->setTextColor(uint32ColorWhite);
+			player_count->setTextHighlightColor(uint32ColorWhite);
+			player_count->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00A.png");
+			player_count->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00B_Highlighted.png");
+			player_count->setBackgroundActivated("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00C_Pressed.png");
+			player_count->setColor(uint32ColorWhite);
+			player_count->setWidgetSearchParent(name.c_str());
+			player_count->addWidgetAction("MenuStart", "confirm");
+			player_count->addWidgetAction("MenuPageRightAlt", "chat");
+			player_count->addWidgetAction("MenuPageLeftAlt", "privacy");
+			player_count->setWidgetBack("back_button");
+			player_count->setWidgetUp(online ? "open" : "custom_difficulty");
+			player_count->setWidgetLeft((std::string("player_count_") + std::to_string(k + 1)).c_str());
+			player_count->setWidgetRight((std::string("player_count_") + std::to_string(k + 3)).c_str());
+			player_count->setWidgetDown((std::string("kick_player_") + std::to_string(k + 2)).c_str());
+			if (index != 0) {
+				player_count->setCallback([](Button&) {soundError(); });
+			}
+			else {
+				switch (k) {
+				case 0:
+					player_count->setCallback([](Button&) {
+						lockSlot(1, false);
+						lockSlot(2, false);
+						lockSlot(3, false);
+						lockSlot(4, false);
+						lockSlot(5, true);
+						lockSlot(6, true);
+						lockSlot(7, true);
+						soundActivate();
+						});
+					break;
+				case 1:
+					player_count->setCallback([](Button&) {
+						lockSlot(1, false);
+						lockSlot(2, false);
+						lockSlot(3, false);
+						lockSlot(4, false);
+						lockSlot(5, false);
+						lockSlot(6, true);
+						lockSlot(7, true);
+						soundActivate();
+						});
+					break;
+				case 2:
+					player_count->setCallback([](Button&) {
+						lockSlot(1, false);
+						lockSlot(2, false);
+						lockSlot(3, false);
+						lockSlot(4, false);
+						lockSlot(5, false);
+						lockSlot(6, false);
+						lockSlot(7, true);
+						soundActivate();
+						});
+					break;
+				case 3:
+					player_count->setCallback([](Button&) {
+						lockSlot(1, false);
+						lockSlot(2, false);
+						lockSlot(3, false);
+						lockSlot(4, false);
+						lockSlot(5, false);
+						lockSlot(6, false);
+						lockSlot(7, false);
 						soundActivate();
 						});
 					break;
 				}
 			}
-        }
+		}
+
 
 		auto kick_player_label = card->addField("kick_player_label", 64);
-		kick_player_label->setSize(SDL_Rect{40, height - 114, 116, 40});
+		kick_player_label->setSize(SDL_Rect{40, 363, 116, 40});
 		kick_player_label->setFont(smallfont_outline);
 		kick_player_label->setText(Language::get(5402));
 		kick_player_label->setJustify(Field::justify_t::CENTER);
 
-        for (int c = 0; c < 3; ++c) {
-            const std::string button_name = std::string("kick_player_") + std::to_string(c + 2);
-		    auto kick_player = card->addButton(button_name.c_str());
-		    kick_player->setSize(SDL_Rect{156 + 44 * c, height - 114, 40, 40});
-		    kick_player->setFont(smallfont_outline);
-		    kick_player->setText(std::to_string(c + 2).c_str());
-		    kick_player->setBorder(0);
-		    kick_player->setTextColor(uint32ColorWhite);
-	        kick_player->setTextHighlightColor(uint32ColorWhite);
-		    kick_player->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00A.png");
-		    kick_player->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00B_Highlighted.png");
-		    kick_player->setBackgroundActivated("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00C_Pressed.png");
-		    kick_player->setColor(uint32ColorWhite);
-		    kick_player->setWidgetSearchParent(name.c_str());
-			kick_player->addWidgetAction("MenuStart", "confirm");
-			kick_player->addWidgetAction("MenuPageRightAlt", "chat");
-			kick_player->addWidgetAction("MenuPageLeftAlt", "privacy");
-			kick_player->setWidgetBack("back_button");
-		    kick_player->setWidgetLeft((std::string("kick_player_") + std::to_string(c + 1)).c_str());
-		    kick_player->setWidgetRight((std::string("kick_player_") + std::to_string(c + 3)).c_str());
-		    kick_player->setWidgetUp((std::string("player_count_") + std::to_string(c + 2)).c_str());
-			if (index != 0) {
-				kick_player->setCallback([](Button&){soundError();});
-			} else {
-				switch (c) {
-				case 0:
-					kick_player->setCallback([](Button&){
-						if (client_disconnected[1]) {
-							soundError();
-							return;
-						}
-						char prompt[1024];
-						snprintf(prompt, sizeof(prompt), Language::get(5403), players[1]->getAccountName());
-						binaryPrompt(prompt, Language::get(5400), Language::get(5401),
-							[](Button&){ // yes
-								soundActivate();
-								closeBinary();
-								kickPlayer(1);
+			for (int c = 0; c < 3; ++c) {
+				const std::string button_name = std::string("kick_player_") + std::to_string(c + 2);
+				auto kick_player = card->addButton(button_name.c_str());
+				kick_player->setSize(SDL_Rect{ 189 + 33 * c, 353, 30, 30 });
+				kick_player->setFont(smallfont_outline);
+				kick_player->setText(std::to_string(c + 2).c_str());
+				kick_player->setBorder(0);
+				kick_player->setTextColor(uint32ColorWhite);
+				kick_player->setTextHighlightColor(uint32ColorWhite);
+				kick_player->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00A.png");
+				kick_player->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00B_Highlighted.png");
+				kick_player->setBackgroundActivated("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00C_Pressed.png");
+				kick_player->setColor(uint32ColorWhite);
+				kick_player->setWidgetSearchParent(name.c_str());
+				kick_player->addWidgetAction("MenuStart", "confirm");
+				kick_player->addWidgetAction("MenuPageRightAlt", "chat");
+				kick_player->addWidgetAction("MenuPageLeftAlt", "privacy");
+				kick_player->setWidgetBack("back_button");
+				kick_player->setWidgetLeft((std::string("kick_player_") + std::to_string(c + 1)).c_str());
+				kick_player->setWidgetRight((std::string("kick_player_") + std::to_string(c + 3)).c_str());
+				kick_player->setWidgetUp((std::string("player_count_") + std::to_string(c + 2)).c_str());
+				if (index != 0) {
+					kick_player->setCallback([](Button&) {soundError(); });
+				}
+				else {
+					switch (c) {
+					case 0:
+						kick_player->setCallback([](Button&) {
+							if (client_disconnected[1]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[1]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(1);
 								},
-							[](Button&){ // no
-								soundCancel();
-								closeBinary();
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
 								});
-						});
-					break;
-				case 1:
-					kick_player->setCallback([](Button&){
-						if (client_disconnected[2]) {
-							soundError();
-							return;
-						}
-						char prompt[1024];
-						snprintf(prompt, sizeof(prompt), Language::get(5403), players[2]->getAccountName());
-						binaryPrompt(prompt, Language::get(5400), Language::get(5401),
-							[](Button&){ // yes
-								soundActivate();
-								closeBinary();
-								kickPlayer(2);
+							});
+						break;
+					case 1:
+						kick_player->setCallback([](Button&) {
+							if (client_disconnected[2]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[2]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(2);
 								},
-							[](Button&){ // no
-								soundCancel();
-								closeBinary();
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
 								});
-						});
-					break;
-				case 2:
-					kick_player->setCallback([](Button&){
-						if (client_disconnected[3]) {
-							soundError();
-							return;
-						}
-						char prompt[1024];
-						snprintf(prompt, sizeof(prompt), Language::get(5403), players[3]->getAccountName());
-						binaryPrompt(prompt, Language::get(5400), Language::get(5401),
-							[](Button&){ // yes
-								soundActivate();
-								closeBinary();
-								kickPlayer(3);
+							});
+						break;
+					case 2:
+						kick_player->setCallback([](Button&) {
+							if (client_disconnected[3]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[3]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(3);
 								},
-							[](Button&){ // no
-								soundCancel();
-								closeBinary();
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
 								});
-						});
-					break;
+							});
+						break;
+					
+					}
 				}
 			}
-        }
+
+			for (int g = 0; g < 4; ++g) {
+				const std::string button_name2 = std::string("kick_player_") + std::to_string(g + 5);
+				auto kick_player2 = card->addButton(button_name2.c_str());
+				kick_player2->setSize(SDL_Rect{ 156 + 33 * g, 386, 30, 30 });
+				kick_player2->setFont(smallfont_outline);
+				kick_player2->setText(std::to_string(g + 5).c_str());
+				kick_player2->setBorder(0);
+				kick_player2->setTextColor(uint32ColorWhite);
+				kick_player2->setTextHighlightColor(uint32ColorWhite);
+				kick_player2->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00A.png");
+				kick_player2->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00B_Highlighted.png");
+				kick_player2->setBackgroundActivated("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00C_Pressed.png");
+				kick_player2->setColor(uint32ColorWhite);
+				kick_player2->setWidgetSearchParent(name.c_str());
+				kick_player2->addWidgetAction("MenuStart", "confirm");
+				kick_player2->addWidgetAction("MenuPageRightAlt", "chat");
+				kick_player2->addWidgetAction("MenuPageLeftAlt", "privacy");
+				kick_player2->setWidgetBack("back_button");
+				kick_player2->setWidgetLeft((std::string("kick_player_") + std::to_string(g + 1)).c_str());
+				kick_player2->setWidgetRight((std::string("kick_player_") + std::to_string(g + 3)).c_str());
+				kick_player2->setWidgetUp((std::string("player_count_") + std::to_string(g + 2)).c_str());
+				if (index != 0) {
+					kick_player2->setCallback([](Button&) {soundError(); });
+				}
+				else {
+					switch (g) {
+					case 0:
+						kick_player2->setCallback([](Button&) {
+							if (client_disconnected[4]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[4]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(4);
+								},
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
+								});
+							});
+						break;
+					case 1:
+						kick_player2->setCallback([](Button&) {
+							if (client_disconnected[5]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[5]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(5);
+								},
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
+								});
+							});
+						break;
+					case 2:
+						kick_player2->setCallback([](Button&) {
+							if (client_disconnected[6]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[6]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(6);
+								},
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
+								});
+							});
+						break;
+					case 3:
+						kick_player2->setCallback([](Button&) {
+							if (client_disconnected[7]) {
+								soundError();
+								return;
+							}
+							char prompt[1024];
+							snprintf(prompt, sizeof(prompt), Language::get(5403), players[7]->getAccountName());
+							binaryPrompt(prompt, Language::get(5400), Language::get(5401),
+								[](Button&) { // yes
+									soundActivate();
+									closeBinary();
+									kickPlayer(7);
+								},
+								[](Button&) { // no
+									soundCancel();
+									closeBinary();
+								});
+							});
+						break;
+					}
+				}
+			}
+
+	
 
         // can't lock slots in local games or saved games
 		if (local || loadingsavegame) {
 			player_count_label->setColor(makeColor(70, 62, 59, 255));
-			for (int c = 0; c < 3; ++c) {
+			for (int c = 0; c < 7; ++c) {
 			    auto player_count = card->findButton((std::string("player_count_") + std::to_string(c + 2)).c_str());
 			    player_count->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00D_Gray.png");
 			    player_count->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00D_Gray.png");
@@ -14919,7 +12913,7 @@ failed:
         // can't kick players in local games
 		if (local) {
 			kick_player_label->setColor(makeColor(70, 62, 59, 255));
-			for (int c = 0; c < 3; ++c) {
+			for (int c = 0; c < 7; ++c) {
 			    auto kick_player = card->findButton((std::string("kick_player_") + std::to_string(c + 2)).c_str());
 			    kick_player->setBackground("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00D_Gray.png");
 			    kick_player->setBackgroundHighlighted("*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_LobbySettings_Button_Tiny00D_Gray.png");
@@ -15424,41 +13418,16 @@ failed:
         for (int c = 0; c < num_races; ++c) {
 		    auto race = subframe->addButton(Language::get(5369 + c));
 		    race->setSize(SDL_Rect{0, c * 36 + 2, 30, 30});
-
-			bool fixedRace = gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race >= 0 && gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID;
-			bool fixedClass = gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.classnum >= 0 && gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES;
-
-			if ( fixedRace && gameModeManager.currentSession.challengeRun.race != c )
-			{
-				race->setBackground("*#images/ui/Main Menus/sublist_item-locked.png");
-				race->setBackgroundHighlighted("");
-				race->setBackgroundActivated("");
-			}
-			else if ( fixedRace && gameModeManager.currentSession.challengeRun.race == c )
-			{
-				race->setBackground("*#images/ui/Main Menus/sublist_item-unpicked.png");
-				race->setBackgroundHighlighted("*#images/ui/Main Menus/sublist_item-unpickedHigh.png");
-				race->setBackgroundActivated("*#images/ui/Main Menus/sublist_item-unpickedPress.png");
-			}
-		    else if (!enabledDLCPack1 && c >= 1 && c <= 4) {
+		    if (!enabledDLCPack1 && c >= 1 && c <= 4) {
 		        race->setBackground("*#images/ui/Main Menus/sublist_item-locked.png");
 		    }
 		    else if (!enabledDLCPack2 && c >= 5 && c <= 8) {
 		        race->setBackground("*#images/ui/Main Menus/sublist_item-locked.png");
 		    }
-			else if ( fixedClass && c >= 1 && !race_button_challenge_check_fn(c, gameModeManager.currentSession.challengeRun.classnum) )
-			{
-				race->setBackground("*#images/ui/Main Menus/sublist_item-locked.png");
-				race->setBackgroundHighlighted("");
-				race->setBackgroundActivated("");
-			}
-		    else 
-			{
-				race->setBackground("*#images/ui/Main Menus/sublist_item-unpicked.png");
-				race->setBackgroundHighlighted("*#images/ui/Main Menus/sublist_item-unpickedHigh.png");
-				race->setBackgroundActivated("*#images/ui/Main Menus/sublist_item-unpickedPress.png");
+		    else {
+		        race->setBackground("*#images/ui/Main Menus/sublist_item-unpicked.png");
+		        race->setBackgroundHighlighted("*#images/ui/Main Menus/sublist_item-unpickedHigh.png");
+		        race->setBackgroundActivated("*#images/ui/Main Menus/sublist_item-unpickedPress.png");
 		    }
 		    race->setIcon("*#images/ui/Main Menus/sublist_item-picked.png");
 		    race->setStyle(Button::style_t::STYLE_RADIO);
@@ -15773,14 +13742,7 @@ failed:
 			auto parent = static_cast<Frame*>(widget.getParent()); assert(parent);
 			auto button = parent->findButton("disable_abilities"); assert(button);
 			const auto player = widget.getOwner();
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race >= 0 && gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-			{
-				field->setTextColor(makeColor(127, 96, 81, 255));
-				button->setDisabled(true);
-				button->setPressed(false);
-			}
-			else if (stats[player]->playerRace == RACE_HUMAN) {
+			if (stats[player]->playerRace == RACE_HUMAN) {
 				field->setTextColor(makeColor(127, 96, 81, 255));
 				button->setDisabled(true);
 				button->setPressed(false);
@@ -15810,15 +13772,6 @@ failed:
 			disable_abilities->setPressed(stats[index]->appearance != 0);
 		}
 		static auto disable_abilities_fn = [](Button& button, int index){
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race >= 0 && gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-			{
-				// fixed race, no change abilities
-				soundError();
-				button.setPressed(false);
-				return;
-			}
-
 			if (stats[index]->playerRace == RACE_HUMAN) {
 				soundError();
 			} else {
@@ -15869,20 +13822,9 @@ failed:
 		male_button->setWidgetUp("disable_abilities");
 		male_button->setWidgetDown("confirm");
 		male_button->setWidgetRight("female");
-		male_button->setCallback([](Button& button){
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race == RACE_SUCCUBUS
-				&& stats[button.getOwner()]->playerRace == RACE_SUCCUBUS)
-			{
-				//soundError();
-				button.setPressed(false);
-				return;
-			}
-			soundActivate(); 
-			male_button_fn(button, button.getOwner());
-			});
-		male_button->addWidgetAction("MenuPageLeft", "male");
-		male_button->addWidgetAction("MenuPageRight", "female");
+		male_button->setCallback([](Button& button){soundActivate(); male_button_fn(button, button.getOwner());});
+	    male_button->addWidgetAction("MenuPageLeft", "male");
+	    male_button->addWidgetAction("MenuPageRight", "female");
 	    male_button->addWidgetAction("MenuAlt1", "disable_abilities");
 	    male_button->addWidgetAction("MenuAlt2", "show_race_info");
 		male_button->setTickCallback([](Widget& widget){
@@ -15927,20 +13869,9 @@ failed:
 		female_button->setWidgetDown("confirm");
 		female_button->setWidgetLeft("male");
 		female_button->setWidgetRight("show_race_info");
-		female_button->setCallback([](Button& button){
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race == RACE_INCUBUS
-				&& stats[button.getOwner()]->playerRace == RACE_INCUBUS )
-			{
-				//soundError();
-				button.setPressed(false);
-				return;
-			}
-			soundActivate(); 
-			female_button_fn(button, button.getOwner());
-			});
-		female_button->addWidgetAction("MenuPageLeft", "male");
-		female_button->addWidgetAction("MenuPageRight", "female");
+		female_button->setCallback([](Button& button){soundActivate(); female_button_fn(button, button.getOwner());});
+	    female_button->addWidgetAction("MenuPageLeft", "male");
+	    female_button->addWidgetAction("MenuPageRight", "female");
 	    female_button->addWidgetAction("MenuAlt1", "disable_abilities");
 	    female_button->addWidgetAction("MenuAlt2", "show_race_info");
 		female_button->setTickCallback([](Widget& widget){
@@ -16378,17 +14309,6 @@ failed:
         randomize_class->setWidgetBack("back_button");
         randomize_class->setGlyphPosition(Widget::glyph_position_t::CENTERED_BOTTOM);
         randomize_class->setCallback([](Button& button){
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-					&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-				{
-					// forced class pick, error and return.
-					soundError();
-					return;
-				}
-			}
-
             const int index = button.getOwner();
             soundActivate();
 
@@ -16505,23 +14425,6 @@ failed:
 					lock_name.c_str());
 				lock->ontop = true;
 			}
-			else if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-					&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-				{
-					if ( c != gameModeManager.currentSession.challengeRun.classnum )
-					{
-						const auto lock_name = std::string(button->getName()) + "lock";
-						auto lock = subframe->addImage(
-							button->getSize(),
-							0xffffffff,
-							"*#images/ui/Main Menus/Play/PlayerCreation/ClassSelection/ClassLocked_Icon_00.png",
-							lock_name.c_str());
-						lock->ontop = true;
-					}
-				}
-			}
 
 			static auto button_fn = [](Button& button, int index){
 				// figure out which class button we clicked based on name
@@ -16535,43 +14438,27 @@ failed:
                 // set class
                 bool success = false;
                 if (c < num_classes) {
-					if ( gameModeManager.currentSession.challengeRun.isActive() 
-						&& gameModeManager.currentSession.challengeRun.classnum >= 0
-						&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES
-						&& gameModeManager.currentSession.challengeRun.classnum != c )
-					{
-						errorPrompt(Language::get(6135), Language::get(5884),
-							[](Button& button) {
-								soundCancel();
-								closeMono();
-							});
-					}
-					else
-					{
-						auto check = isCharacterValidFromDLC(*stats[index], c);
-						if (check != VALID_OK_CHARACTER) {
-							switch (check) {
-							default:
-							case INVALID_CHARACTER:
-								soundError();
-								break;
-							case INVALID_REQUIRE_ACHIEVEMENT:
-								race_achievement_required_error(c);
-								break;
-							case INVALID_REQUIREDLC1:
-								openDLCPrompt(0);
-								break;
-							case INVALID_REQUIREDLC2:
-								openDLCPrompt(1);
-								break;
-							}
-						} else {
-							success = true;
-							soundActivate();
-							button.setColor(makeColor(255, 255, 255, 255)); // highlight this button
-							client_classes[index] = c;
-						}
-					}
+                    auto check = isCharacterValidFromDLC(*stats[index], c);
+                    if (check != VALID_OK_CHARACTER) {
+                        switch (check) {
+                        default:
+                        case INVALID_CHARACTER:
+                        case INVALID_REQUIRE_ACHIEVEMENT:
+                            soundError();
+                            break;
+                        case INVALID_REQUIREDLC1:
+                            openDLCPrompt(0);
+                            break;
+                        case INVALID_REQUIREDLC2:
+                            openDLCPrompt(1);
+                            break;
+                        }
+                    } else {
+                        success = true;
+                        soundActivate();
+                        button.setColor(makeColor(255, 255, 255, 255)); // highlight this button
+                        client_classes[index] = c;
+                    }
                     
                     stats[index]->clearStats();
                     initClass(index);
@@ -16718,7 +14605,6 @@ failed:
 
 		if (multiplayer == CLIENT) {
 			sendSvFlagsOverNet();
-			sendCustomScenarioOverNet(index);
 		}
 
 		auto countdown = lobby->findFrame("countdown");
@@ -16732,36 +14618,6 @@ failed:
             stats[index]->sex = static_cast<sex_t>(RNG.getU8() % 2);
             stats[index]->appearance = RNG.uniform(0, NUMAPPEARANCES - 1);
             client_classes[index] = 0;
-
-			bool challengeRunModified = false;
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-					&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-				{
-					client_classes[index] = gameModeManager.currentSession.challengeRun.classnum;
-					challengeRunModified = true;
-				}
-				if ( gameModeManager.currentSession.challengeRun.race >= 0
-					&& gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-				{
-					stats[index]->playerRace = gameModeManager.currentSession.challengeRun.race;
-					if ( stats[index]->playerRace != RACE_HUMAN )
-					{
-						stats[index]->appearance = 0;
-					}
-					if ( stats[index]->playerRace == RACE_INCUBUS )
-					{
-						stats[index]->sex = sex_t::MALE;
-					}
-					else if ( stats[index]->playerRace == RACE_SUCCUBUS )
-					{
-						stats[index]->sex = sex_t::FEMALE;
-					}
-					challengeRunModified = true;
-				}
-			}
-
             stats[index]->clearStats();
             initClass(index);
         }
@@ -16954,18 +14810,7 @@ failed:
 		male_button->setWidgetRight("female");
 		male_button->setWidgetUp("game_settings");
 		male_button->setWidgetDown("class");
-		male_button->setCallback([](Button& button){
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race == RACE_SUCCUBUS
-				&& stats[button.getOwner()]->playerRace == RACE_SUCCUBUS )
-			{
-				//soundError();
-				button.setPressed(false);
-				return;
-			}
-			soundActivate(); 
-			male_button_fn(button, button.getOwner());
-		});
+		male_button->setCallback([](Button& button){soundActivate(); male_button_fn(button, button.getOwner());});
 		male_button->setTickCallback([](Widget& widget){
 			const int index = widget.getOwner();
 			auto button = static_cast<Button*>(&widget); assert(button);
@@ -17008,18 +14853,7 @@ failed:
 		female_button->setWidgetRight("race");
 		female_button->setWidgetUp("game_settings");
 		female_button->setWidgetDown("class");
-		female_button->setCallback([](Button& button){
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& gameModeManager.currentSession.challengeRun.race == RACE_INCUBUS
-				&& stats[button.getOwner()]->playerRace == RACE_INCUBUS )
-			{
-				//soundError();
-				button.setPressed(false);
-				return;
-			}
-			soundActivate(); 
-			female_button_fn(button, button.getOwner());
-			});
+		female_button->setCallback([](Button& button){soundActivate(); female_button_fn(button, button.getOwner());});
 		female_button->setTickCallback([](Widget& widget){
 			const int index = widget.getOwner();
 			auto button = static_cast<Button*>(&widget); assert(button);
@@ -17068,72 +14902,20 @@ failed:
 
 			auto card = static_cast<Frame*>(button.getParent());
 
-			bool forcedClass = false;
-			bool forcedRace = false;
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-					&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-				{
-					forcedClass = true;
-				}
-				if ( gameModeManager.currentSession.challengeRun.race >= 0
-					&& gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-				{
-					forcedRace = true;
-				}
+			// select a random race
+			// there are 9 legal races that the player can select from the start.
+			if (enabledDLCPack1 && enabledDLCPack2) {
+			    stats[index]->playerRace = RNG.uniform(0, NUMPLAYABLERACES - 1);
+			} else if (enabledDLCPack1) {
+			    stats[index]->playerRace = RNG.uniform(0, 4);
+			} else if (enabledDLCPack2) {
+			    stats[index]->playerRace = RNG.uniform(0, 4);
+			    if (stats[index]->playerRace > 0) {
+			        stats[index]->playerRace += 4;
+			    }
+			} else {
+			    stats[index]->playerRace = RACE_HUMAN;
 			}
-
-			if ( !forcedRace )
-			{
-				if ( forcedClass )
-				{
-					std::vector<unsigned int> chances;
-					chances.resize(RACE_INSECTOID + 1);
-					auto oldRace = stats[index]->playerRace;
-					Uint32 oldAppearance = stats[index]->appearance;
-					stats[index]->appearance = 0;
-
-					bool chanceFound = false;
-					for ( int race = RACE_HUMAN; race <= RACE_INSECTOID; ++race )
-					{
-						stats[index]->playerRace = race;
-						chances[race] = 0;
-						if ( isCharacterValidFromDLC(*stats[index], index) == VALID_OK_CHARACTER )
-						{
-							chances[race] = 1;
-							chanceFound = true;
-						}
-					}
-					stats[index]->appearance = oldAppearance;
-					if ( !chanceFound )
-					{
-						stats[index]->playerRace = RACE_HUMAN;
-					}
-					else
-					{
-						stats[index]->playerRace = RNG.discrete(chances.data(), chances.size());
-					}
-				}
-				else
-				{
-					// select a random race
-					// there are 9 legal races that the player can select from the start.
-					if (enabledDLCPack1 && enabledDLCPack2) {
-						stats[index]->playerRace = RNG.uniform(0, NUMPLAYABLERACES - 1);
-					} else if (enabledDLCPack1) {
-						stats[index]->playerRace = RNG.uniform(0, 4);
-					} else if (enabledDLCPack2) {
-						stats[index]->playerRace = RNG.uniform(0, 4);
-						if (stats[index]->playerRace > 0) {
-							stats[index]->playerRace += 4;
-						}
-					} else {
-						stats[index]->playerRace = RACE_HUMAN;
-					}
-				}
-			}
-
 			auto race_button = card->findButton("race");
 			race_button->setText(Language::get(5369 + stats[index]->playerRace));
 
@@ -17173,22 +14955,15 @@ failed:
 			    }
 			}
 
-			if ( !forcedClass )
-			{
-				// select a random class
-				const auto reduced_class_list = reducedClassList(index);
-				const auto class_choice = RNG.uniform(0, (int)reduced_class_list.size() - 1);
-				const auto random_class = reduced_class_list[class_choice];
-				for (int c = 0; c < num_classes; ++c) {
-					if (strcmp(random_class, classes_in_order[c]) == 0) {
-						client_classes[index] = c;
-						break;
-					}
+			// select a random class
+			const auto reduced_class_list = reducedClassList(index);
+			const auto class_choice = RNG.uniform(0, (int)reduced_class_list.size() - 1);
+			const auto random_class = reduced_class_list[class_choice];
+			for (int c = 0; c < num_classes; ++c) {
+				if (strcmp(random_class, classes_in_order[c]) == 0) {
+					client_classes[index] = c;
+					break;
 				}
-			}
-			else
-			{
-				client_classes[index] = gameModeManager.currentSession.challengeRun.classnum;
 			}
 
 			stats[index]->clearStats();
@@ -18072,15 +15847,7 @@ failed:
 
 	        // set unique game key
 	        local_rng.seedTime();
-			if ( gameModeManager.currentSession.seededRun.seed > 0 )
-			{
-				uniqueGameKey = gameModeManager.currentSession.seededRun.seed;
-			}
-			else
-			{
-				local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
-			}
-			uniqueLobbyKey = local_rng.getU32();
+	        local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
 	        net_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 
 	        // send start signal to each player
@@ -18097,10 +15864,9 @@ failed:
 		            SDLNet_Write32(svFlags, &net_packet->data[4]);
 		            SDLNet_Write32(uniqueGameKey, &net_packet->data[8]);
 		            net_packet->data[12] = loadingsavegame ? 1 : 0;
-					SDLNet_Write32(uniqueLobbyKey, &net_packet->data[13]);
 		            net_packet->address.host = net_clients[c - 1].host;
 		            net_packet->address.port = net_clients[c - 1].port;
-		            net_packet->len = 17;
+		            net_packet->len = 13;
 		            sendPacketSafe(net_sock, -1, net_packet, c - 1);
 	            }
 	        }
@@ -18275,52 +16041,16 @@ failed:
 					{
 						replayedLastCharacter = replayLastCharacter(c, SINGLE);
 					}
-
 					if ( !replayedLastCharacter )
 					{
 						stats[c]->playerRace = RACE_HUMAN;
 						stats[c]->sex = static_cast<sex_t>(RNG.getU8() % 2);
 						stats[c]->appearance = RNG.uniform(0, NUMAPPEARANCES - 1);
 						client_classes[c] = 0;
-					}
 
-					bool challengeRunModified = false;
-					if ( gameModeManager.currentSession.challengeRun.isActive() )
-					{
-						if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-							&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-						{
-							client_classes[c] = gameModeManager.currentSession.challengeRun.classnum;
-							challengeRunModified = true;
-						}
-						if ( gameModeManager.currentSession.challengeRun.race >= 0
-							&& gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-						{
-							stats[c]->playerRace = gameModeManager.currentSession.challengeRun.race;
-							if ( stats[c]->playerRace != RACE_HUMAN )
-							{
-								stats[c]->appearance = 0;
-							}
-							if ( stats[c]->playerRace == RACE_INCUBUS )
-							{
-								stats[c]->sex = sex_t::MALE;
-							}
-							else if ( stats[c]->playerRace == RACE_SUCCUBUS )
-							{
-								stats[c]->sex = sex_t::FEMALE;
-							}
-							challengeRunModified = true;
-						}
-					}
-
-					if ( challengeRunModified || !replayedLastCharacter )
-					{
 						stats[c]->clearStats();
 						initClass(c);
-					}
 
-					if ( !replayedLastCharacter )
-					{
 						// random name
 						auto& names = stats[c]->sex == sex_t::MALE ?
 						    randomPlayerNamesMale : randomPlayerNamesFemale;
@@ -18336,15 +16066,6 @@ failed:
 		}
 
 		GameplayPreferences_t::reset();
-		gameModeManager.currentSession.seededRun.reset();
-		if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-		{
-			if ( gameModeManager.currentSession.challengeRun.isActive() )
-			{
-				gameModeManager.currentSession.seededRun.setup(gameModeManager.currentSession.challengeRun.seed_word);
-			}
-		}
 
         if (type == LobbyType::LobbyJoined) {
             sendPlayerOverNet();
@@ -18442,7 +16163,7 @@ failed:
 				}
 				});
 			paperdoll->setDrawCallback([](const Widget& widget, SDL_Rect pos){
-				auto angle = (330.0 + 20.0 * widget.getOwner()) * PI / 180.0;
+				auto angle = -0.5; //(330.0 + 20.0 * widget.getOwner()) * PI / 180.0;
                 const int player = widget.getOwner();
                 //const bool dark = isCharacterValidFromDLC(*stats[player],
                 //    client_classes[player]) != VALID_OK_CHARACTER;
@@ -18450,195 +16171,11 @@ failed:
 				});
 		}
 
-		static auto float_warning_add = [](Frame* _frame, const char* name, std::string text) {
-			_frame->setDisabled(false);
-			Frame* frame = _frame->findFrame(name);
-			if ( !frame )
-			{
-				frame = _frame->addFrame(name);
-				frame->setHollow(true);
-				frame->addImage(SDL_Rect{ 0, 0, 16, 38 }, 0xFFFFFFFF,
-					"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Left.png", "bg_left");
-
-				auto field = frame->addField("txt", 32);
-				field->setFont(smallfont_outline);
-				field->setColor(makeColor(134, 159, 165, 255));
-			}
-
-			auto find = text.find('\n');
-			if ( find != std::string::npos )
-			{
-				text.at(find) = ' ';
-			}
-
-			if ( auto field = frame->findField("txt") )
-			{
-				field->setText(text.c_str());
-				if ( auto textGet = field->getTextObject() )
-				{
-					field->setSize(SDL_Rect{ 36, 9, (int)textGet->getWidth(), 26 });
-
-					SDL_Rect right_pos = SDL_Rect{ field->getSize().x + field->getSize().w - 4, 0, 16, 38 };
-					Frame::image_t* right = frame->findImage("bg_right");
-					if ( !right )
-					{
-						right = frame->addImage(right_pos, 0xFFFFFFFF,
-						"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Right.png", "bg_right");
-					}
-					right->pos = right_pos;
-
-					SDL_Rect mid_pos = SDL_Rect{ 16, 0, right->pos.x - 16, 38 };
-					Frame::image_t* mid = frame->findImage("bg_mid");
-					if ( !mid )
-					{
-						mid = frame->addImage(mid_pos, 0xFFFFFFFF,
-							"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Mid.png", "bg_mid");
-					}
-					mid->pos = mid_pos;
-
-					Frame::image_t* icon = frame->findImage("icon");
-					if ( !icon )
-					{
-						icon = frame->addImage(SDL_Rect{12, 10, 18, 18}, 0xFFFFFFFF,
-							"", "icon");
-					}
-
-					if ( !strcmp(name, "1") || !strcmp(name, "2") )
-					{
-						icon->path = "*#images/ui/Main Menus/Challenges/seed_icon_sm.png";
-						icon->pos.y = 6;
-						icon->pos.w = 16;
-						icon->pos.h = 24;
-						icon->disabled = false;
-					}
-					else if ( !strcmp(name, "3") )
-					{
-						icon->path = "*#images/ui/HUD/warning_glyph.png";
-						icon->pos.y = 10;
-						icon->pos.w = 18;
-						icon->pos.h = 18;
-						icon->disabled = false;
-					}
-					else
-					{
-						icon->disabled = true;
-					}
-
-					SDL_Rect pos = frame->getSize();
-					pos.w = right->pos.x + right->pos.w;
-					pos.h = right->pos.h;
-					frame->setSize(pos);
-					frame->setDisabled(false);
-				}
-			}
-		};
-		static auto lobby_float_warning_fn = [](Frame& frame) {
-
-			Frame* lobbyWarnings = frame.findFrame("lobby_float_warnings");
-			if ( !lobbyWarnings )
-			{
-				lobbyWarnings = frame.addFrame("lobby_float_warnings");
-				lobbyWarnings->setHollow(true);
-			}
-			lobbyWarnings->setDisabled(true);
-			if ( frame.findFrame("countdown") )
-			{
-				return;
-			}
-			for ( auto f : lobbyWarnings->getFrames() )
-			{
-				f->setDisabled(true);
-			}
-
-			SDL_Rect pos = frame.getSize();
-			pos.y = 60;
-			lobbyWarnings->setSize(pos);
-
-			int customRunType = 0;
-			bool customSeed = false;
-			if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN
-				|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-			{
-				if ( gameModeManager.currentSession.challengeRun.isActive() )
-				{
-					auto& lid = gameModeManager.currentSession.challengeRun.lid;
-					if ( lid.find("oneshot") != std::string::npos )
-					{
-						float_warning_add(lobbyWarnings, "1", Language::get(6110));
-					}
-					else if ( lid.find("unlimited") != std::string::npos )
-					{
-						float_warning_add(lobbyWarnings, "1", Language::get(6111));
-					}
-					else if ( lid.find("challenge") != std::string::npos )
-					{
-						float_warning_add(lobbyWarnings, "1", Language::get(6112));
-					}
-				}
-			}
-			if ( gameModeManager.currentSession.seededRun.seed > 0 )
-			{
-				float_warning_add(lobbyWarnings, "2", gameModeManager.currentSession.seededRun.seedString);
-			}
-			if ( multiplayer == CLIENT && (lobbyWindowSvFlags & SV_FLAG_HARDCORE) )
-			{
-				float_warning_add(lobbyWarnings, "3", "Hardcore Enabled");
-			}
-			else if ( multiplayer != CLIENT && (svFlags & SV_FLAG_HARDCORE) )
-			{
-				float_warning_add(lobbyWarnings, "3", "Hardcore Enabled");
-			}
-
-			int totalWidth = 0;
-			for ( auto f : lobbyWarnings->getFrames() )
-			{
-				if ( !f->isDisabled() )
-				{
-					if ( totalWidth != 0 )
-					{
-						totalWidth += 8;
-					}
-					totalWidth += f->getSize().w;
-				}
-			}
-			pos.x = pos.w / 2 - totalWidth / 2;
-			totalWidth += 8;
-			if ( pos.x % 2 == 1 )
-			{
-				++pos.x;
-			}
-			pos.w = totalWidth;
-
-			int prevWidth = 0;
-			for ( auto f : lobbyWarnings->getFrames() )
-			{
-				if ( !f->isDisabled() )
-				{
-					SDL_Rect pos = f->getSize();
-					pos.x = prevWidth;
-					f->setSize(pos);
-					prevWidth = pos.x + pos.w + 8;
-				}
-			}
-			lobbyWarnings->setSize(pos);
-
-			lobbyWarnings->setInheritParentFrameOpacity(false);
-			real_t opacity = 1.0;
-			int period = 5;
-			if ( (ticks % (period * TICKS_PER_SECOND)) > (period * 0.75) * TICKS_PER_SECOND )
-			{
-				real_t percent = ((ticks % (period * TICKS_PER_SECOND)) - (period * 0.75) * TICKS_PER_SECOND) / ((period * 0.25) * TICKS_PER_SECOND);
-				opacity += 0.25 * (-1 * sin(percent * PI));
-			}
-			lobbyWarnings->setOpacity(100.0 * opacity);
-		};
-
 		auto banner = lobby->addFrame("banner");
         banner->setTickCallback([](Widget& widget){
             auto banner = static_cast<Frame*>(&widget); assert(banner);
             auto lobby = static_cast<Frame*>(widget.getParent()); assert(lobby);
             banner->setSize(SDL_Rect{lobby->getActualSize().x, 0, Frame::virtualScreenX, 66});
-			lobby_float_warning_fn(*lobby);
             });
         {
             auto background = banner->addImage(
@@ -19440,7 +16977,6 @@ failed:
 	struct LobbyInfo {
 	    std::string name;
         std::string version;
-		std::string challengeLid;
 	    int players;
 	    int ping;
 	    bool locked;
@@ -19458,8 +16994,7 @@ failed:
 	        Uint32 _flags = 0,
 	        const char* _address = "",
 			int _numMods = 0,
-			bool _modsDisableAchievements = false,
-			const char* _challengeLid = "" ):
+			bool _modsDisableAchievements = false):
 	        name(_name),
             version(_version),
 	        players(_players),
@@ -19468,8 +17003,7 @@ failed:
 	        flags(_flags),
 	        address(_address),
 			numMods(_numMods),
-			modsDisableAchievements(_modsDisableAchievements),
-			challengeLid(_challengeLid)
+			modsDisableAchievements(_modsDisableAchievements)
 	    {}
 	};
 
@@ -19535,73 +17069,6 @@ failed:
                 }
 				if ( !privateLobby )
 				{
-					if ( info.challengeLid.find("oneshot") != std::string::npos )
-					{
-						std::string prefix = Language::get(6110);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' ) 
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-					else if ( info.challengeLid.find("unlimited") != std::string::npos )
-					{
-						std::string prefix = Language::get(6111);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' )
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-					else if ( info.challengeLid.find("challenge") != std::string::npos )
-					{
-						std::string prefix = Language::get(6112);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' )
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-
-#ifdef NINTENDO
-					if ( info.challengeLid != "" )
-					{
-						info.locked = true;
-						lobbies.back().locked = info.locked;
-					}
-#else
-					if ( info.challengeLid != "" )
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != info.challengeLid )
-						{
-							info.locked = true;
-							lobbies.back().locked = info.locked;
-						}
-					}
-					else
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != "" )
-						{
-							info.locked = true;
-							lobbies.back().locked = info.locked;
-						}
-					}
-#endif
-
 					if ( info.numMods > 0 )
 					{
 						if ( info.name.find(Language::get(5479)) == std::string::npos )
@@ -19659,72 +17126,6 @@ failed:
                 }
 				if ( !privateLobby )
 				{
-					if ( info.challengeLid.find("oneshot") != std::string::npos )
-					{
-						std::string prefix = Language::get(6110);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' )
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-					else if ( info.challengeLid.find("unlimited") != std::string::npos )
-					{
-						std::string prefix = Language::get(6111);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' )
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-					else if ( info.challengeLid.find("challenge") != std::string::npos )
-					{
-						std::string prefix = Language::get(6112);
-						for ( auto& c : prefix )
-						{
-							if ( c == '\n' )
-							{
-								c = ' ';
-							}
-						}
-						info.name = ("[" + prefix + "]") + (" " + info.name);
-						lobbies.back().name = info.name;
-					}
-
-#ifdef NINTENDO
-					if ( info.challengeLid != "" )
-					{
-						info.locked = true;
-						lobbies.back().locked = info.locked;
-					}
-#else
-					if ( info.challengeLid != "" )
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != info.challengeLid )
-						{
-							info.locked = true;
-							lobbies.back().locked = info.locked;
-						}
-					}
-					else
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != "" )
-						{
-							info.locked = true;
-							lobbies.back().locked = info.locked;
-						}
-					}
-#endif
 					if ( info.numMods > 0 )
 					{
 						if ( info.name.find(Language::get(5479)) == std::string::npos )
@@ -19865,41 +17266,6 @@ failed:
 							else
 #endif
 							{
-#ifdef NINTENDO
-								if ( lobby.challengeLid != "" )
-								{
-									errorPrompt(Language::get(6130), Language::get(5482),
-										[](Button&) {soundCancel(); closeMono(); });
-									return;
-								}
-#else
-								if ( Mods::numCurrentModsLoaded >= 0 )
-								{
-									errorPrompt(Language::get(6132), Language::get(5482),
-										[](Button&) {soundCancel(); closeMono(); });
-									return;
-								}
-#endif
-								if ( lobby.challengeLid != "" )
-								{
-									if ( gameModeManager.currentSession.challengeRun.isActive()
-										&& gameModeManager.currentSession.challengeRun.lid != lobby.challengeLid )
-									{
-										errorPrompt(Language::get(6129), Language::get(5482),
-											[](Button&) {soundCancel(); closeMono(); });
-										return;
-									}
-								}
-								else
-								{
-									if ( gameModeManager.currentSession.challengeRun.isActive()
-										&& gameModeManager.currentSession.challengeRun.lid != "" )
-									{
-										errorPrompt(Language::get(6129), Language::get(5482),
-											[](Button&) {soundCancel(); closeMono(); });
-										return;
-									}
-								}
 								errorPrompt(Language::get(5481), Language::get(5482),
 									[](Button&) {soundCancel(); closeMono(); });
 							}
@@ -20080,7 +17446,6 @@ failed:
 	                info.players = lobbyPlayers[c];
 					info.numMods = lobbyNumMods[c];
 					info.modsDisableAchievements = lobbyModDisableAchievements[c];
-					info.challengeLid = lobbyChallengeRun[c];
 	                info.ping = 50; // TODO
 	                info.locked = false; // this will always be false because steam only reported joinable lobbies
 	                info.flags = (Uint32)flags;
@@ -20098,7 +17463,6 @@ failed:
 						info.players = MAXPLAYERS - lobby->FreeSlots;
 						info.numMods = lobby->LobbyAttributes.numServerMods;
 						info.modsDisableAchievements = lobby->LobbyAttributes.modsDisableAchievements;
-						info.challengeLid = lobby->LobbyAttributes.challengeLid;
 						info.ping = 50; // TODO
 						info.locked = lobby->LobbyAttributes.gameCurrentLevel != -1;
 						info.flags = lobby->LobbyAttributes.serverFlags;
@@ -20205,7 +17569,6 @@ failed:
 				// error
 				multiplayer = SINGLE;
 				loadingsavegame = 0;
-				loadinglobbykey = 0;
 				soundError();
 				closeNetworkInterfaces();
 				nxEnableAutoSleep();
@@ -20256,7 +17619,6 @@ failed:
 		if (!nxInitWireless()) {
 			multiplayer = SINGLE;
 			loadingsavegame = 0;
-			loadinglobbykey = 0;
 			soundError();
 			closeNetworkInterfaces();
 			destroyMainMenu();
@@ -20365,20 +17727,12 @@ failed:
 
 		(void)createBackWidget(window, [](Button& button){
 			multiplayer = SINGLE;
-
-			bool gotoMainMenu = false;
-			if ( loadingsavegame > 0 )
-			{
-				gotoMainMenu = true;
-				gameModeManager.currentSession.restoreSavedServerFlags();
-				gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-				gameModeManager.currentSession.challengeRun.reset();
-			}
-
 		    loadingsavegame = 0;
-			loadinglobbykey = 0;
 		    soundCancel();
 		    closeNetworkInterfaces();
+		    createLocalOrNetworkMenu();
+
+			gameModeManager.currentSession.restoreSavedServerFlags();
 
 #ifdef NINTENDO
 			nxEnableAutoSleep();
@@ -20387,20 +17741,11 @@ failed:
 			nxShutdownWireless();
 #endif
 
-			if ( gotoMainMenu )
-			{
-				destroyMainMenu();
-				createMainMenu(false);
-			}
-			else
-			{
-				createLocalOrNetworkMenu();
-				// remove parent window
-				auto frame = static_cast<Frame*>(button.getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame = static_cast<Frame*>(frame->getParent());
-				frame->removeSelf();
-			}
+		    // remove parent window
+		    auto frame = static_cast<Frame*>(button.getParent());
+		    frame = static_cast<Frame*>(frame->getParent());
+		    frame = static_cast<Frame*>(frame->getParent());
+		    frame->removeSelf();
 		    }, SDL_Rect{292, 4, 0, 0});
 
 		auto background = window->addImage(
@@ -20459,11 +17804,16 @@ failed:
             createGenericWindowDecorations(*frame_right);
             sizeWindowDecorations(*frame_right, SDL_Rect{24, 72, 256, 312});
 
+			
+
+
 		    auto label = frame_right->addField("label", 128);
 		    label->setJustify(Field::justify_t::CENTER);
 		    label->setSize(SDL_Rect{80, 48, 146, 22});
 		    label->setFont(smallfont_outline);
 		    label->setText(Language::get(5486));
+
+			
 
             const char* filter_names[] = {
                 Language::get(5487), // show non-joinable
@@ -20541,7 +17891,7 @@ failed:
                     for (auto& lobby : lobbies) {
                         addLobby(lobby);
                     }
-
+					/*
 					if ( Frame* parent = static_cast<Frame*>(button.getParent()) ) 
 					{
 						if ( Frame* parent2 = parent->getParent() )
@@ -20552,7 +17902,7 @@ failed:
 								slider->getCallback()(*slider);
 							}
 						}
-					}
+					}*/
 		            });
 		        checkbox->setWidgetBack("filter_settings");
 		        std::string next_name = std::string("filter_checkbox") + std::to_string(index + 1);
@@ -20807,7 +18157,6 @@ failed:
 			} else {
 				multiplayer = SINGLE;
 				loadingsavegame = 0;
-				loadinglobbykey = 0;
 				soundError();
 				closeNetworkInterfaces();
 				destroyMainMenu();
@@ -20923,47 +18272,6 @@ failed:
                         button.deselect();
                     }
                 } else {
-#ifdef NINTENDO
-					if ( lobby.numMods > 0 )
-					{
-						errorPrompt(Language::get(5480), Language::get(5482),
-							[](Button&) {soundCancel(); closeMono(); });
-						return;
-					}
-					if ( lobby.challengeLid != "" )
-					{
-						errorPrompt(Language::get(6130), Language::get(5482),
-							[](Button&) {soundCancel(); closeMono(); });
-						return;
-					}
-#else
-					if ( Mods::numCurrentModsLoaded >= 0 )
-					{
-						errorPrompt(Language::get(6132), Language::get(5482),
-							[](Button&) {soundCancel(); closeMono(); });
-						return;
-					}
-#endif
-					if ( lobby.challengeLid != "" )
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != lobby.challengeLid )
-						{
-							errorPrompt(Language::get(6129), Language::get(5482),
-								[](Button&) {soundCancel(); closeMono(); });
-							return;
-						}
-					}
-					else
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive()
-							&& gameModeManager.currentSession.challengeRun.lid != "" )
-						{
-							errorPrompt(Language::get(6129), Language::get(5482),
-								[](Button&) {soundCancel(); closeMono(); });
-							return;
-						}
-					}
 					errorPrompt(Language::get(5481), Language::get(5482),
 						[](Button&) {soundCancel(); closeMono();});
                 }
@@ -21911,16 +19219,6 @@ failed:
 
 	static void createPlayWindow() {
 		multiplayer = SINGLE;
-		gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-		gameModeManager.currentSession.challengeRun.reset();
-
-#ifdef USE_PLAYFAB
-		if ( playfabUser.bLoggedIn && playfabUser.newSeedsAvailable && intro )
-		{
-			playfabUser.newSeedsAvailable = false;
-			UIToastNotificationManager.createNewSeedNotification();
-		}
-#endif
 
 		auto dimmer = main_menu_frame->addFrame("dimmer");
 		dimmer->setSize(SDL_Rect{0, 0, Frame::virtualScreenX, Frame::virtualScreenY});
@@ -21929,29 +19227,21 @@ failed:
 		dimmer->setBorder(0);
 
 		auto window = dimmer->addFrame("play_game_window");
+		window->setSize(SDL_Rect{
+			(Frame::virtualScreenX - 218 * 2) / 2,
+			(Frame::virtualScreenY - 130 * 2) / 2,
+			218 * 2,
+			130 * 2});
+		window->setActualSize(SDL_Rect{0, 0, 218 * 2, 130 * 2});
+		window->setColor(0);
+		window->setBorder(0);
 
 		auto background = window->addImage(
-			SDL_Rect{ 0, 0, 436, 260 },
+			window->getActualSize(),
 			0xffffffff,
 			"*images/ui/Main Menus/Play/UI_PlayGame_Window_02.png",
 			"background"
 		);
-#ifdef USE_PLAYFAB
-#ifndef NINTENDO
-		background->path = "*images/ui/Main Menus/Play/UI_PlayGame_Window_02_Events.png";
-		background->pos.h = 340;
-#endif
-#endif
-
-		window->setSize(SDL_Rect{
-			(Frame::virtualScreenX - background->pos.w) / 2,
-			(Frame::virtualScreenY - background->pos.h) / 2,
-			background->pos.w,
-			background->pos.h});
-		window->setActualSize(SDL_Rect{0, 0, window->getSize().w, window->getSize().h});
-		window->setColor(0);
-		window->setBorder(0);
-
 
 		auto banner_title = window->addField("banner", 32);
 		banner_title->setSize(SDL_Rect{170, 24, 98, 18});
@@ -21962,37 +19252,7 @@ failed:
 		bool continueAvailable = anySaveFileExists();
 
 		auto hall_of_trials_button = window->addButton("hall_of_trials");
-		hall_of_trials_button->setSize(SDL_Rect{ 134, 176, 168, 52 });
-
-#ifdef USE_PLAYFAB
-#ifndef NINTENDO
-		hall_of_trials_button->setSize(SDL_Rect{ 134, 176 + 14, 168, 52 });
-
-		auto challenge_button = window->addButton("challenges");
-		challenge_button->setSize(SDL_Rect{134, 244 + 6, 168, 52});
-		if ( Mods::numCurrentModsLoaded >= 0 )
-		{
-			challenge_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_Button_Disabled00.png");
-			challenge_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_Button_DisabledHigh00.png");
-			challenge_button->setBackgroundActivated("*images/ui/Main Menus/Play/UI_PlayMenu_Button_DisabledPress00.png");
-		}
-		else
-		{
-			challenge_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_Button_Seed00.png");
-			challenge_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_Button_SeedHigh00.png");
-			challenge_button->setBackgroundActivated("*images/ui/Main Menus/Play/UI_PlayMenu_Button_SeedPress00.png");
-		}
-		challenge_button->setHighlightColor(makeColor(255, 255, 255, 255));
-		challenge_button->setColor(makeColor(255, 255, 255, 255));
-		challenge_button->setText(Language::get(6119));
-		challenge_button->setFont(smallfont_outline);
-		challenge_button->setWidgetSearchParent(window->getName());
-		challenge_button->setWidgetUp("hall_of_trials");
-		challenge_button->setWidgetBack("back_button");
-		challenge_button->setCallback(playChallengeLoadingWindow);
-#endif
-#endif
-
+		hall_of_trials_button->setSize(SDL_Rect{134, 176, 168, 52});
 		hall_of_trials_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrials00.png");
 		hall_of_trials_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrialsHigh00.png");
 		hall_of_trials_button->setBackgroundActivated("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrialsPress00.png");
@@ -22001,22 +19261,16 @@ failed:
 		hall_of_trials_button->setText(Language::get(5560));
 		hall_of_trials_button->setFont(smallfont_outline);
 		hall_of_trials_button->setWidgetSearchParent(window->getName());
-		if ( continueAvailable ) {
+		if (continueAvailable) {
 			hall_of_trials_button->setWidgetUp("continue");
-		}
-		else {
+		} else {
 			hall_of_trials_button->setWidgetUp("new");
 		}
 		hall_of_trials_button->setWidgetBack("back_button");
-#ifdef USE_PLAYFAB
-#ifndef NINTENDO
-		hall_of_trials_button->setWidgetDown("challenges");
-#endif
-#endif
 		hall_of_trials_button->setCallback([](Button&){
 			soundActivate();
 			createHallofTrialsMenu();
-		});
+			});
 
 		(void)createBackWidget(window, [](Button& button){
 			soundCancel();
@@ -22446,11 +19700,6 @@ failed:
 			frame = static_cast<Frame*>(frame->getParent());
 			frame = static_cast<Frame*>(frame->getParent());
 			frame->removeSelf();
-
-			gameModeManager.currentSession.restoreSavedServerFlags();
-			gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-			gameModeManager.currentSession.challengeRun.reset();
-
 			createPlayWindow();
 			}, SDL_Rect{42, 4, 0, 0});
 
@@ -22633,7 +19882,6 @@ failed:
 
 	static void playNew(Button& button) {
 	    loadingsavegame = 0;
-		loadinglobbykey = 0;
 
 	    soundActivate();
 	    createLocalOrNetworkMenu();
@@ -22729,8 +19977,7 @@ failed:
 
 		savegameCurrentFileIndex = load_save_index;
 		auto info = getSaveGameInfo(load_singleplayer, savegameCurrentFileIndex);
-		loadingsavegame = info.gamekey;
-		loadinglobbykey = info.lobbykey;
+		loadingsavegame = getSaveGameUniqueGameKey(info);
 
 		if ( info.multiplayer_type == SPLITSCREEN || info.multiplayer_type == SINGLE ) {
 			multiplayer = SINGLE;
@@ -22843,26 +20090,6 @@ failed:
 		const bool modded = saveGameInfo.players[saveGameInfo.player_num].additionalConducts[CONDUCT_MODDED];
 		bool moddedSavegameWarning = false;
 		bool unModdedSavegameWarning = false;
-		int challengeEventSave = 0;
-		for ( auto& pair : saveGameInfo.additional_data )
-		{
-			if ( pair.first == "game_scenario" )
-			{
-				if ( pair.second.find("\"lid\":\"lid_victory_seed_oneshot\"") != std::string::npos )
-				{
-					challengeEventSave = 1;
-				}
-				else if ( pair.second.find("\"lid\":\"lid_victory_seed_unlimited\"") != std::string::npos )
-				{
-					challengeEventSave = 2;
-				}
-				else if ( pair.second.find("\"lid\":\"lid_victory_seed_challenge\"") != std::string::npos )
-				{
-					challengeEventSave = 3;
-				}
-				break;
-			}
-		}
 		if ( modded && Mods::numCurrentModsLoaded <= 0 )
 		{
 			moddedSavegameWarning = true;
@@ -22872,88 +20099,7 @@ failed:
 			unModdedSavegameWarning = true;
 		}
 
-		// check DLC entitlement
-		int validCharacter = VALID_OK_CHARACTER;
-		int index = -1;
-		for ( auto& player : saveGameInfo.players )
-		{
-			++index;
-			if ( saveGameInfo.multiplayer_type == SPLITSCREEN )
-			{
-				if ( index < saveGameInfo.players_connected.size() )
-				{
-					if ( saveGameInfo.players_connected[index] )
-					{
-						validCharacter = player.isCharacterValidFromDLC();
-						if ( validCharacter != VALID_OK_CHARACTER )
-						{
-							break;
-						}
-					}
-				}
-			}
-			else
-			{
-				if ( index == saveGameInfo.player_num )
-				{
-					validCharacter = player.isCharacterValidFromDLC();
-					break;
-				}
-			}
-		}
-
-		if ( validCharacter != VALID_OK_CHARACTER )
-		{
-			snprintf(window_text, sizeof(window_text), Language::get(6099), shortened_name, validCharacter);
-			monoPromptXL(
-				window_text, Language::get(5591), 
-				[](Button& button) { // Cancel button
-					soundCancel();
-				if ( savegame_selected ) {
-					savegame_selected->select();
-				}
-				else {
-					assert(main_menu_frame);
-					auto window = main_menu_frame->findFrame("continue_window"); assert(window);
-					if ( load_singleplayer ) {
-						auto b = window->findButton("singleplayer");
-						b->select();
-					}
-					else {
-						auto b = window->findButton("multiplayer");
-						b->select();
-					}
-				}
-				closeMono();
-				});
-			soundError();
-		}
-		else if ( challengeEventSave && Mods::numCurrentModsLoaded >= 0 )
-		{
-			monoPrompt(
-				Language::get(6133), Language::get(5591),
-				[](Button& button) { // Cancel button
-					soundCancel();
-					if ( savegame_selected ) {
-						savegame_selected->select();
-					}
-					else {
-						assert(main_menu_frame);
-						auto window = main_menu_frame->findFrame("continue_window"); assert(window);
-						if ( load_singleplayer ) {
-							auto b = window->findButton("singleplayer");
-							b->select();
-						}
-						else {
-							auto b = window->findButton("multiplayer");
-							b->select();
-						}
-					}
-					closeMono();
-				});
-			soundError();
-		}
-		else if ( moddedSavegameWarning || unModdedSavegameWarning )
+		if ( moddedSavegameWarning || unModdedSavegameWarning )
 		{
 			if ( moddedSavegameWarning )
 			{
@@ -23229,26 +20375,6 @@ failed:
 
                 // extract savegame info
                 const bool modded = saveGameInfo.players[saveGameInfo.player_num].additionalConducts[CONDUCT_MODDED];
-				int challengeEventSave = 0;
-				for ( auto& pair : saveGameInfo.additional_data )
-				{
-					if ( pair.first == "game_scenario" )
-					{
-						if ( pair.second.find("\"lid\":\"lid_victory_seed_oneshot\"") != std::string::npos )
-						{
-							challengeEventSave = 1;
-						}
-						else if ( pair.second.find("\"lid\":\"lid_victory_seed_unlimited\"") != std::string::npos )
-						{
-							challengeEventSave = 2;
-						}
-						else if ( pair.second.find("\"lid\":\"lid_victory_seed_challenge\"") != std::string::npos )
-						{
-							challengeEventSave = 3;
-						}
-						break;
-					}
-				}
                 const std::string& game_name = saveGameInfo.gamename;
                 const auto timestamp = saveGameInfo.timestamp;
 				int numplayers = 0;
@@ -23393,13 +20519,7 @@ failed:
 				screenshot->section.x = (image->getWidth() - image->getHeight()) / 2;
 				screenshot->section.w = image->getHeight();
     
-				if ( challengeEventSave )
-				{
-					savegame_book->setBackground("*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_02.png");
-					savegame_book->setTextColor(makeColor(193, 187, 120, 255));
-					savegame_book->setTextHighlightColor(makeColor(193, 187, 120, 255));
-				}
-                else if (modded) {
+                if (modded) {
                     savegame_book->setBackground("*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_01.png");
                     savegame_book->setTextColor(makeColor(73, 255, 182, 255));
                     savegame_book->setTextHighlightColor(makeColor(73, 255, 182, 255));
@@ -23413,71 +20533,11 @@ failed:
 		        auto overlay = cover->addImage(
 		            SDL_Rect{32, 16, 160, 162},
 		            0xffffffff,
-					challengeEventSave ? "*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_Corners_02.png" : (modded ?
+                    modded ?
                         "*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_Corners_01.png":
-                        "*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_Corners_00.png"),
+                        "*images/ui/Main Menus/ContinueGame/UI_Cont_SaveFile_Book_Corners_00.png",
 		            (str + "_overlay").c_str()
 		        );
-
-				if ( challengeEventSave >= 1 && challengeEventSave <= 3 )
-				{
-					std::string title = Language::get(6110 + (challengeEventSave - 1));
-					for ( auto& c : title )
-					{
-						if ( c == '\n' )
-						{
-							c = ' ';
-						}
-					}
-
-					auto frame = cover->addFrame("event_label");
-					frame->setHollow(true);
-					auto left = frame->addImage(SDL_Rect{ 0, 0, 16, 38 }, 0xFFFFFFFF,
-						"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Left.png", "bg_left");
-					left->disabled = true;
-
-					auto field = frame->addField("txt", 32);
-					field->setFont(smallfont_outline);
-					field->setColor(makeColor(193, 163, 124, 255));
-
-					if ( auto field = frame->findField("txt") )
-					{
-						field->setText(title.c_str());
-						if ( auto textGet = field->getTextObject() )
-						{
-							field->setSize(SDL_Rect{ 36, 9, (int)textGet->getWidth(), 26 });
-
-							SDL_Rect right_pos = SDL_Rect{ field->getSize().x + field->getSize().w - 4, 0, 16, 38 };
-							Frame::image_t* right = frame->addImage(right_pos, 0xFFFFFFFF,
-									"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Right.png", "bg_right");
-							right->pos = right_pos;
-							right->disabled = true;
-
-							SDL_Rect mid_pos = SDL_Rect{ 16, 0, right->pos.x - 16, 38 };
-							Frame::image_t* mid = frame->addImage(mid_pos, 0xFFFFFFFF,
-								"*#images/ui/Main Menus/Play/PlayerCreation/LobbySettings/UI_Lobby_Warning_Mid.png", "bg_mid");
-							mid->pos = mid_pos;
-							mid->disabled = true;
-
-							Frame::image_t* icon = frame->addImage(SDL_Rect{ 12, 10, 18, 18 }, 0xFFFFFFFF,
-								"", "icon");
-
-							icon->path = "*#images/ui/Main Menus/Challenges/seed_icon_sm.png";
-							icon->pos.y = 6;
-							icon->pos.w = 16;
-							icon->pos.h = 24;
-							icon->disabled = false;
-
-							SDL_Rect pos = frame->getSize();
-							pos.w = right->pos.x + right->pos.w;
-							pos.h = right->pos.h;
-							pos.x = cover->getSize().w / 2 - pos.w / 2;
-							pos.y = cover->getSize().h - pos.h + 4;
-							frame->setSize(pos);
-							frame->setDisabled(false);
-						}
-					}
-				}
                     
                 // add player info
                 if (numplayers == 1) {
@@ -24458,6 +21518,10 @@ failed:
 		confirm_and_exit->setHighlightColor(makeColor(255, 255, 255, 255));
 		confirm_and_exit->setCallback([](Button& button){
             settingsApply();
+			if (video_refresh == VideoRefresh::None) {
+			    // resolution confirm prompt makes this sound
+			    soundActivate();
+			}
 			(void)settingsSave();
 
 			static auto return_to_main_menu = [](Button& button){
@@ -24476,28 +21540,26 @@ failed:
 #if defined(VIDEO_RESTART_NEEDED)
 			if (video_refresh != VideoRefresh::None) {
 				if (video_refresh & VideoRefresh::Video) {
-                    // non-windows platforms need to throw a prompt
-                    // to restart to apply video settings
+					// non-windows platforms need to throw a prompt to restart to apply video settings
+					monoPrompt(Language::get(5631), Language::get(5632),
+						[](Button& button) {
+							soundCancel();
+							closeMono();
+							return_to_main_menu(button);
+						});
                     video_refresh &= ~VideoRefresh::Video;
-                    restartPromptRequired = true;
 				} else {
-                    soundActivate();
+                    if (video_refresh) {
+                        soundActivate();
+                    }
+					return_to_main_menu(button);
 				}
+			} else {
+				return_to_main_menu(button);
 			}
+#else
+			return_to_main_menu(button);
 #endif
-
-            if (restartPromptRequired) {
-                restartPromptRequired = false;
-                monoPrompt(Language::get(5631), Language::get(5632),
-                    [](Button& button) {
-                        soundCancel();
-                        closeMono();
-                        return_to_main_menu(button);
-                    });
-            } else {
-			    soundActivate();
-                return_to_main_menu(button);
-            }
 			});
 		confirm_and_exit->setWidgetSearchParent("settings");
 		confirm_and_exit->setWidgetBack("discard_and_exit");
@@ -24635,7 +21697,7 @@ failed:
 					&& gameModeManager.currentMode != GameModeManager_t::GameModes::GAME_MODE_TUTORIAL_INIT ) {
 					if ( gameModeManager.allowsSaves() )
 					{
-						deleteSaveGame(multiplayer);
+					deleteSaveGame(multiplayer);
 					}
 					beginFade(MainMenu::FadeDestination::GameStart);
 				} else {
@@ -24645,15 +21707,7 @@ failed:
 
 				// set unique game key
 				local_rng.seedTime();
-				if ( gameModeManager.currentSession.seededRun.seed > 0 )
-				{
-					uniqueGameKey = gameModeManager.currentSession.seededRun.seed;
-				}
-				else
-				{
-					local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
-				}
-				uniqueLobbyKey = local_rng.getU32();
+				local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
 				net_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 
 				if (multiplayer == SERVER) {
@@ -24665,10 +21719,9 @@ failed:
 	                    SDLNet_Write32(svFlags, &net_packet->data[4]);
 	                    SDLNet_Write32(uniqueGameKey, &net_packet->data[8]);
 	                    net_packet->data[12] = 0;
-						SDLNet_Write32(uniqueLobbyKey, &net_packet->data[13]);
 	                    net_packet->address.host = net_clients[c - 1].host;
 	                    net_packet->address.port = net_clients[c - 1].port;
-	                    net_packet->len = 17;
+	                    net_packet->len = 13;
 	                    sendPacketSafe(net_sock, -1, net_packet, c - 1);
                     }
 				}
@@ -24719,18 +21772,7 @@ failed:
 
 	static void mainQuitToMainMenu(Button& button) {
 	    const char* prompt;
-		if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-		{
-			if ( currentlevel == 0 )
-			{
-				prompt = Language::get(6167);
-			}
-			else
-			{
-				prompt = Language::get(6168);
-			}
-		}
-		else  if ( saveGameExists(multiplayer == SINGLE) && gameModeManager.allowsSaves() ) {
+	    if (saveGameExists(multiplayer == SINGLE)) {
 	        prompt = Language::get(5647);
 	    } else {
 	        prompt = Language::get(5648);
@@ -24743,7 +21785,7 @@ failed:
 				soundActivate();
 				destroyMainMenu();
 				createDummyMainMenu();
-				if (saveGameExists(multiplayer == SINGLE) && gameModeManager.allowsSaves() ) {
+                if (saveGameExists(multiplayer == SINGLE)) {
                     beginFade(MainMenu::FadeDestination::RootMainMenu);
                 } else {
                     beginFade(MainMenu::FadeDestination::Endgame);
@@ -24943,22 +21985,24 @@ failed:
                 // end the game AND create a highscore!
                 // this is because the game is well and truly done. There is no save file.
                 // create a highscore as token of remembrance.
-				doEndgame(true);
-				destroyMainMenu();
-				createDummyMainMenu();
-				createCreditsScreen(true);
+
+					doEndgame(true);
+
+					destroyMainMenu();
+					createDummyMainMenu();
+					createCreditsScreen(true);
 #ifdef SOUND
-	            playMusic(intromusic[0], true, false, false);
+					playMusic(intromusic[0], true, false, false);
 #endif
 
 #ifndef NINTENDO
-				for (int c = 1; c < MAX_SPLITSCREEN; ++c) {
-					if (inputs.hasController(c)) {
-						inputs.removeControllerWithDeviceID(inputs.getControllerID(c));
-						Input::inputs[c].refresh();
+					for (int c = 1; c < MAX_SPLITSCREEN; ++c) {
+						if (inputs.hasController(c)) {
+							inputs.removeControllerWithDeviceID(inputs.getControllerID(c));
+							Input::inputs[c].refresh();
+						}
 					}
-				}
-#endif
+#endif		
 			}
 			else if (main_menu_fade_destination == FadeDestination::IntroStoryScreen) {
 				destroyMainMenu();
@@ -25023,43 +22067,38 @@ failed:
 #endif
 			}
 			else if (main_menu_fade_destination == FadeDestination::GameStart) {
-				if ( gameModeManager.currentMode == GameModeManager_t::GAME_MODE_TUTORIAL
-					|| gameModeManager.currentMode == GameModeManager_t::GAME_MODE_TUTORIAL_INIT )
-				{
-					gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-				}
-
+				gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
 
 				if ( gameModeManager.allowsSaves() )
 				{
-					// set save game file index
-					if (!loadingsavegame) {
-						const bool singleplayer = (multiplayer == SINGLE);
-						bool foundEmptySlot = false;
+				// set save game file index
+				if (!loadingsavegame) {
+					const bool singleplayer = (multiplayer == SINGLE);
+					bool foundEmptySlot = false;
+	                for (int i = 0; i < SAVE_GAMES_MAX; ++i) {
+						// look for an empty save slot
+                        if (!saveGameExists(singleplayer, i)) {
+                            savegameCurrentFileIndex = i;
+							foundEmptySlot = true;
+                            break;
+                        }
+                    }
+					if (!foundEmptySlot) {
+						// no empty save slots, look for the oldest one to overwrite
+						using list_type = std::pair<int, SaveGameInfo>;
+						std::list<list_type> savegames;
 						for (int i = 0; i < SAVE_GAMES_MAX; ++i) {
-							// look for an empty save slot
-							if (!saveGameExists(singleplayer, i)) {
-								savegameCurrentFileIndex = i;
-								foundEmptySlot = true;
-								break;
+							if (saveGameExists(singleplayer, i)) {
+								savegames.emplace_back(i, getSaveGameInfo(singleplayer, i));
 							}
 						}
-						if (!foundEmptySlot) {
-							// no empty save slots, look for the oldest one to overwrite
-							using list_type = std::pair<int, SaveGameInfo>;
-							std::list<list_type> savegames;
-							for (int i = 0; i < SAVE_GAMES_MAX; ++i) {
-								if (saveGameExists(singleplayer, i)) {
-									savegames.emplace_back(i, getSaveGameInfo(singleplayer, i));
-								}
-							}
-							assert(!savegames.empty());
-							savegames.sort([](const list_type& lhs, const list_type& rhs) {
-								return rhs.second.timestamp > lhs.second.timestamp;
-								});
-							savegameCurrentFileIndex = savegames.front().first;
-						}
+						assert(!savegames.empty());
+						savegames.sort([](const list_type& lhs, const list_type& rhs) {
+							return rhs.second.timestamp > lhs.second.timestamp;
+							});
+						savegameCurrentFileIndex = savegames.front().first;
 					}
+				}
 				}
 
 				// set clientnum and client_disconnected[] based on the state of the lobby
@@ -25104,7 +22143,6 @@ failed:
 				multiplayer = SINGLE;
 				numplayers = 0;
 				loadingsavegame = 0;
-				loadinglobbykey = 0;
 				gameModeManager.setMode(GameModeManager_t::GAME_MODE_TUTORIAL_INIT);
 
                 // don't show the first time prompt anymore
@@ -25676,13 +22714,9 @@ failed:
 				}
 				if (multiplayer == SERVER || (multiplayer == SINGLE && getMenuOwner() == clientnum)) {
 					// only the first player has the power to restart the game.
-					if ( !(gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-						&& currentlevel > 0) )
-					{
-						options.insert(options.end(), {
-						   {"Restart Game", Language::get(5768), mainRestartGame},
-						   });
-					}
+			        options.insert(options.end(), {
+				        {"Restart Game", Language::get(5768), mainRestartGame},
+				        });
 				}
 			} else {
 			    if (strcmp(map.filename, "tutorial_hub.lmp")) {
@@ -25835,13 +22869,7 @@ failed:
 			achievements->setVJustify(Field::justify_t::TOP);
 			achievements->setTickCallback([](Widget& widget) {
 				Field* achievements = static_cast<Field*>(&widget);
-				if ( gameModeManager.currentSession.challengeRun.isActive()
-					&& gameModeManager.currentSession.challengeRun.lid.find("challenge") != std::string::npos )
-				{
-					achievements->setColor(makeColor(180, 37, 37, 255));
-					achievements->setText(Language::get(6138));
-				}
-				else if ( multiplayer == CLIENT && Mods::lobbyDisableSteamAchievements )
+				if ( multiplayer == CLIENT && Mods::lobbyDisableSteamAchievements )
 				{
 					achievements->setColor(makeColor(180, 37, 37, 255));
 					achievements->setText(Language::get(5781));
@@ -25981,8 +23009,8 @@ failed:
 #else
 			const char* banner_images[][2] = {
 				{
-					"*#images/ui/Main Menus/Banners/banner_eatmyhat.png",
-					"*#images/ui/Main Menus/Banners/banner_eatmyhat-hover.png",
+					"*#images/ui/Main Menus/Banners/banner_latestnews-preview.png",
+					"*#images/ui/Main Menus/Banners/banner_latestnews-preview_hover.png",
 				},
 				{
 					"*#images/ui/Main Menus/Banners/UI_MainMenu_ComboBanner1_base.png",
@@ -26008,7 +23036,7 @@ failed:
             
 			void(*banner_funcs[])(Button&) = {
 				[](Button&) { // banner #1
-					openURLTryWithOverlay("https://www.baronygame.com/blog/eat-my-hat-release");
+					openURLTryWithOverlay("https://www.baronygame.com/blog/eat-my-hat-announcement");
 				},
 				[](Button&) { // banner #2
 					 openDLCPrompt(enabledDLCPack1 ? 1 : 0);
@@ -26240,14 +23268,7 @@ failed:
 	}
 
     void openGameoverWindow(int player, bool tutorial) {
-        static ConsoleVariable<bool> gameover_purple("/gameover_purple", true);
-
-		bool purple_window = *gameover_purple;
-		if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-		{
-			purple_window = false;
-		}
+        static ConsoleVariable<bool> purple_window("/gameover_purple", true);
 
         // determine if any other players are alive
 		bool survivingPlayer = false;
@@ -26341,7 +23362,7 @@ failed:
         auto background = window->addImage(
 			SDL_Rect{0, 0, 500, 336},
 			0xffffffff,
-			purple_window?
+			*purple_window?
 			    "*images/ui/GameOver/UI_GameOver_BG_02E.png":
 			    "*images/ui/GameOver/UI_GameOver_BG_02D.png",
 			"background"
@@ -26373,9 +23394,6 @@ failed:
             cause_of_death = items[stats[player]->killer_item].getIdentifiedName();
             break;
         }
-		case KilledBy::FAILED_CHALLENGE:
-			cause_of_death = Language::get(6153);
-			break;
         default: {
             cause_of_death = Language::get(5794 + (int)stats[player]->killer);
             break;
@@ -26396,7 +23414,7 @@ failed:
         auto epitaph = window->addField("epitaph", 1024);
         epitaph->setSize(SDL_Rect{106, 122, 288, 90});
         epitaph->setFont(smallfont_outline);
-        if (purple_window) {
+        if (*purple_window) {
             epitaph->setTextColor(makeColor(156, 172, 184, 255));
             epitaph->setOutlineColor(makeColor(43, 32, 46, 255));
         } else {
@@ -26425,7 +23443,6 @@ failed:
                 } else {
                     snprintf(highscore_buf, sizeof(highscore_buf), "%s", Language::get(5834));
                 }
-
                 footer->setText(highscore_buf);
             }
         }
@@ -26519,36 +23536,27 @@ failed:
 				    beginFade(MainMenu::FadeDestination::Endgame);
                     });
             }
+            quit->setWidgetRight("restart");
 
-			bool oneshotGrave = (gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT)
-				&& currentlevel > 0;
-
-			if ( oneshotGrave )
-			{
-				quit->setWidgetRight("dismiss");
-			}
-			else
-			{
-				quit->setWidgetRight("restart");
-				auto restart = window->addButton("restart");
-				restart->setSize(SDL_Rect{ 202, 294, 124, 34 });
-				restart->setColor(makeColor(255, 255, 255, 255));
-				restart->setHighlightColor(makeColor(255, 255, 255, 255));
-				restart->setBackground("images/ui/GameOver/UI_GameOver_Button_Lobby_02.png");
-				restart->setBackgroundHighlighted("images/ui/GameOver/UI_GameOver_Button_LobbyHigh_02.png");
-				restart->setBackgroundActivated("images/ui/GameOver/UI_GameOver_Button_LobbyPress_02.png");
-				restart->setText(Language::get(5838));
-				restart->setFont(smallfont_outline);
-				restart->setTextColor(makeColor(170, 134, 102, 255));
-				restart->setTextHighlightColor(makeColor(170, 134, 102, 255));
-				restart->setCallback([](Button& button) {
-					if ( fadeout ) {
-						return;
-					}
-				soundActivate();
-				//auto window = static_cast<Frame*>(button.getParent());
-				//auto frame = static_cast<Frame*>(window->getParent());
-				//frame->removeSelf();
+            auto restart = window->addButton("restart");
+            restart->setSize(SDL_Rect{202, 294, 124, 34});
+            restart->setColor(makeColor(255, 255, 255, 255));
+            restart->setHighlightColor(makeColor(255, 255, 255, 255));
+            restart->setBackground("images/ui/GameOver/UI_GameOver_Button_Lobby_02.png");
+            restart->setBackgroundHighlighted("images/ui/GameOver/UI_GameOver_Button_LobbyHigh_02.png");
+            restart->setBackgroundActivated("images/ui/GameOver/UI_GameOver_Button_LobbyPress_02.png");
+            restart->setText(Language::get(5838));
+            restart->setFont(smallfont_outline);
+            restart->setTextColor(makeColor(170, 134, 102, 255));
+            restart->setTextHighlightColor(makeColor(170, 134, 102, 255));
+            restart->setCallback([](Button& button){
+                if (fadeout) {
+                    return;
+                }
+                soundActivate();
+                //auto window = static_cast<Frame*>(button.getParent());
+                //auto frame = static_cast<Frame*>(window->getParent());
+                //frame->removeSelf();
 
 				pauseGame(2, 0);
 				destroyMainMenu();
@@ -26557,81 +23565,62 @@ failed:
 					&& gameModeManager.currentMode != GameModeManager_t::GameModes::GAME_MODE_TUTORIAL_INIT ) {
 					if ( gameModeManager.allowsSaves() )
 					{
-						deleteSaveGame(multiplayer);
+					deleteSaveGame(multiplayer);
 					}
 					beginFade(MainMenu::FadeDestination::GameStart);
-				}
-				else {
-					tutorial_map_destination = map.filename;
+				} else {
+				    tutorial_map_destination = map.filename;
 					beginFade(MainMenu::FadeDestination::HallOfTrials);
 				}
 
 				// set unique game key
 				local_rng.seedTime();
-				if ( gameModeManager.currentSession.seededRun.seed > 0 )
-				{
-					uniqueGameKey = gameModeManager.currentSession.seededRun.seed;
-				}
-				else
-				{
-					local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
-				}
-				uniqueLobbyKey = local_rng.getU32();
+				local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
 				net_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 
-				if ( multiplayer == SERVER ) {
-					for ( int c = 1; c < MAXPLAYERS; c++ ) {
-						if ( client_disconnected[c] ) {
-							continue;
-						}
-						memcpy((char*)net_packet->data, "RSTR", 4);
-						SDLNet_Write32(svFlags, &net_packet->data[4]);
-						SDLNet_Write32(uniqueGameKey, &net_packet->data[8]);
-						net_packet->data[12] = 0;
-						SDLNet_Write32(uniqueLobbyKey, &net_packet->data[13]);
-						net_packet->address.host = net_clients[c - 1].host;
-						net_packet->address.port = net_clients[c - 1].port;
-						net_packet->len = 17;
-						sendPacketSafe(net_sock, -1, net_packet, c - 1);
-					}
+				if (multiplayer == SERVER) {
+                    for (int c = 1; c < MAXPLAYERS; c++) {
+	                    if (client_disconnected[c]) {
+		                    continue;
+	                    }
+	                    memcpy((char*)net_packet->data, "RSTR", 4);
+	                    SDLNet_Write32(svFlags, &net_packet->data[4]);
+	                    SDLNet_Write32(uniqueGameKey, &net_packet->data[8]);
+	                    net_packet->data[12] = 0;
+	                    net_packet->address.host = net_clients[c - 1].host;
+	                    net_packet->address.port = net_clients[c - 1].port;
+	                    net_packet->len = 13;
+	                    sendPacketSafe(net_sock, -1, net_packet, c - 1);
+                    }
 				}
-					});
-				restart->select();
-				restart->setWidgetLeft("quit");
-				restart->setWidgetRight("dismiss");
+                });
+            restart->select();
+            restart->setWidgetLeft("quit");
+            restart->setWidgetRight("dismiss");
 
-			}
-			auto dismiss = window->addButton("dismiss");
-			dismiss->setSize(SDL_Rect{ 328, 294, 96, 34 });
-			dismiss->setColor(makeColor(255, 255, 255, 255));
-			dismiss->setHighlightColor(makeColor(255, 255, 255, 255));
-			dismiss->setBackground("images/ui/GameOver/UI_GameOver_Button_Restart_02.png");
-			dismiss->setBackgroundHighlighted("images/ui/GameOver/UI_GameOver_Button_RestartHigh_02.png");
-			dismiss->setBackgroundActivated("images/ui/GameOver/UI_GameOver_Button_RestartPress_02.png");
-			dismiss->setText(Language::get(5835));
-			dismiss->setFont(smallfont_outline);
-			dismiss->setTextColor(makeColor(170, 134, 102, 255));
-			dismiss->setTextHighlightColor(makeColor(170, 134, 102, 255));
-			dismiss->setTickCallback(dismiss_tick);
+            auto dismiss = window->addButton("dismiss");
+            dismiss->setSize(SDL_Rect{328, 294, 96, 34});
+            dismiss->setColor(makeColor(255, 255, 255, 255));
+            dismiss->setHighlightColor(makeColor(255, 255, 255, 255));
+            dismiss->setBackground("images/ui/GameOver/UI_GameOver_Button_Restart_02.png");
+            dismiss->setBackgroundHighlighted("images/ui/GameOver/UI_GameOver_Button_RestartHigh_02.png");
+            dismiss->setBackgroundActivated("images/ui/GameOver/UI_GameOver_Button_RestartPress_02.png");
+            dismiss->setText(Language::get(5835));
+            dismiss->setFont(smallfont_outline);
+            dismiss->setTextColor(makeColor(170, 134, 102, 255));
+            dismiss->setTextHighlightColor(makeColor(170, 134, 102, 255));
+            dismiss->setTickCallback(dismiss_tick);
 			dismiss->setUserData((void*)(intptr_t)(player + 1));
-			dismiss->setCallback([](Button& button) {
-				soundCancel();
-			auto window = static_cast<Frame*>(button.getParent());
-			auto frame = static_cast<Frame*>(window->getParent());
-			frame->removeSelf();
+            dismiss->setCallback([](Button& button){
+                soundCancel();
+                auto window = static_cast<Frame*>(button.getParent());
+                auto frame = static_cast<Frame*>(window->getParent());
+                frame->removeSelf();
 
-			int player = reinterpret_cast<intptr_t>(button.getUserData()) - 1;
-			Player::Ghost_t::gameoverOnDismiss(player);
-				});
-
-			if ( oneshotGrave )
-			{
-				dismiss->setWidgetLeft("quit");
-			}
-			else
-			{
-				dismiss->setWidgetLeft("restart");
-			}
+				int player = reinterpret_cast<intptr_t>(button.getUserData()) - 1;
+				Player::Ghost_t::gameoverOnDismiss(player);
+                });
+            dismiss->setWidgetLeft("restart");
         }
     }
 
@@ -26736,7 +23725,7 @@ failed:
 		}
 
 		bool issmall = false;
-		Frame* prompt = createPrompt("mono_prompt", issmall ? SIZE_SMALL : SIZE_BIG);
+		Frame* prompt = createPrompt("mono_prompt", issmall);
 		if ( !prompt ) {
 			return;
 		}
@@ -28366,7 +25355,7 @@ failed:
 	) {
 		soundActivate();
 
-		Frame* frame = createPrompt("binary_prompt", SIZE_BIG);
+		Frame* frame = createPrompt("binary_prompt", false);
 		if ( !frame ) {
 			return nullptr;
 		}
@@ -30951,1641 +27940,6 @@ failed:
 				button->setTextColor(makeColorRGB(128, 128, 128));
 			}
 		});
-	}
-#endif
-
-#ifdef USE_PLAYFAB
-	static void playChallengeBegin(PlayfabUser_t::PeriodicalEvents_t::Event_t& e)
-	{
-		loadingsavegame = 0;
-		loadinglobbykey = 0;
-
-		if ( e.lid.find("oneshot") != std::string::npos )
-		{
-			gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT);
-		}
-		else
-		{
-			gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN);
-		}
-		gameModeManager.currentSession.challengeRun.setup(e.scenario);
-
-		assert(main_menu_frame);
-		auto window = main_menu_frame->findFrame("challenge_window");
-		if ( window ) {
-			auto dimmer = static_cast<Frame*>(window->getParent()); assert(dimmer);
-			dimmer->removeSelf();
-		}
-
-		gameModeManager.currentSession.saveServerFlags();
-		gameModeManager.currentSession.challengeRun.applySettings();
-
-		createLocalOrNetworkMenu();
-
-		if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-		{
-			if ( auto frame = main_menu_frame->findFrame("local_or_network_window") )
-			{
-				if ( auto local_btn = frame->findButton("local") )
-				{
-					local_btn->activate();
-				}
-			}
-		}
-	}
-
-	static void playChallengeEventOneshotAttempted(std::string _lid)
-	{
-		static std::string lid;
-		lid = _lid;
-
-		auto check = VALID_OK_CHARACTER;
-		for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-		{
-			if ( e.lid == lid )
-			{
-				auto challenge = GameModeManager_t::CurrentSession_t::ChallengeRun_t();
-				challenge.setup(e.scenario);
-				if ( challenge.isActive() )
-				{
-					switch ( challenge.classnum )
-					{
-					case CLASS_CONJURER:
-					case CLASS_ACCURSED:
-					case CLASS_MESMER:
-					case CLASS_BREWER:
-						if ( !enabledDLCPack1 )
-						{
-							check = INVALID_REQUIREDLC1;
-						}
-						break;
-					case CLASS_MACHINIST:
-					case CLASS_PUNISHER:
-					case CLASS_SHAMAN:
-					case CLASS_HUNTER:
-						if ( !enabledDLCPack2 )
-						{
-							check = INVALID_REQUIREDLC2;
-						}
-						break;
-					default:
-						break;
-					}
-					switch ( challenge.race )
-					{
-					case RACE_SKELETON:
-					case RACE_VAMPIRE:
-					case RACE_SUCCUBUS:
-					case RACE_GOATMAN:
-						if ( !enabledDLCPack1 )
-						{
-							check = INVALID_REQUIREDLC1;
-						}
-						break;
-					case RACE_AUTOMATON:
-					case RACE_INCUBUS:
-					case RACE_GOBLIN:
-					case RACE_INSECTOID:
-						if ( !enabledDLCPack2 )
-						{
-							check = INVALID_REQUIREDLC2;
-						}
-						break;
-					default:
-						break;
-					}
-				}
-				break;
-			}
-		}
-
-		std::string txt;
-		if ( check == INVALID_REQUIREDLC1 )
-		{
-			txt = Language::get(6126);
-			txt += Language::get(5002);
-		}
-		else if ( check == INVALID_REQUIREDLC2 )
-		{
-			txt = Language::get(6127);
-			txt += Language::get(5002);
-		}
-		else
-		{
-			txt = Language::get(6125);
-		}
-
-		if ( check == INVALID_REQUIREDLC1 || check == INVALID_REQUIREDLC2 )
-		{
-			auto prompt = binaryPromptXL(
-				txt.c_str(),
-				Language::get(5003),
-				Language::get(5004),
-				[](Button&) {
-#if defined(STEAMWORKS)
-					soundActivate();
-					openURLTryWithOverlay("https://store.steampowered.com/dlc/371970/Barony/");
-#elif defined(NINTENDO)
-					nxShowAllDLC();
-					/*if (nxShowDLCPage(dlcPromptIndex) == false) {
-						soundError();
-					}*/
-#elif defined(USE_EOS)
-					soundActivate();
-					openURLTryWithOverlay("https://store.epicgames.com/en-US/all-dlc/barony");
-#endif
-					// fixes a bug where you could get spammed with 100s of browser tabs...
-					mousestatus[SDL_BUTTON_LEFT] = 0;
-					Input::mouseButtons[SDL_BUTTON_LEFT] = 0;
-					closeBinary();
-					assert(main_menu_frame);
-
-					auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-					auto challenge_btn = challenge_window->findButton(lid.c_str());
-					assert(challenge_btn);
-					challenge_btn->select();
-				},
-				[](Button&) {
-					soundCancel();
-					closeBinary();
-					assert(main_menu_frame);
-
-					auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-					auto challenge_btn = challenge_window->findButton(lid.c_str());
-					assert(challenge_btn);
-					challenge_btn->select();
-				}, false, false);
-			if ( auto text = prompt->findField("text") )
-			{
-				SDL_Rect pos = text->getSize();
-				pos.y -= 4;
-				text->setSize(pos);
-			}
-		}
-		else
-		{
-			auto prompt = binaryPromptXL(
-				txt.c_str(),
-				Language::get(5884),
-				Language::get(5860),
-				[](Button&) {
-					// proceed to game
-					for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-					{
-						if ( e.lid == lid )
-						{
-							soundActivate();
-							closeBinary();
-							playChallengeBegin(e);
-							return;
-						}
-					}
-
-					// error?
-					soundCancel();
-					closeBinary();
-					assert(main_menu_frame);
-
-					auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-					auto challenge_btn = challenge_window->findButton(lid.c_str());
-					assert(challenge_btn);
-					challenge_btn->select();
-				},
-				[](Button&) {
-					soundCancel();
-					closeBinary();
-					assert(main_menu_frame);
-
-					auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-					auto challenge_btn = challenge_window->findButton(lid.c_str());
-					assert(challenge_btn);
-					challenge_btn->select();
-				}, false, false);
-			if ( auto text = prompt->findField("text") )
-			{
-				SDL_Rect pos = text->getSize();
-				pos.y -= 4;
-				text->setSize(pos);
-			}
-		}
-	}
-
-	static void playChallengeEventExpiringWarning(std::string _lid)
-	{
-		static std::string lid;
-		lid = _lid;
-		auto prompt = binaryPrompt(
-			Language::get(6109),
-			Language::get(5884),
-			Language::get(5860),
-			[](Button&) {
-				// proceed to game
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == lid )
-					{
-						soundActivate();
-						closeBinary();
-						playChallengeBegin(e);
-						return;
-					}
-				}
-
-				// error?
-				soundCancel();
-				closeBinary();
-				assert(main_menu_frame);
-
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge_btn = challenge_window->findButton(lid.c_str());
-				assert(challenge_btn);
-				challenge_btn->select();
-			},
-			[](Button&) {
-				soundCancel();
-				closeBinary();
-				assert(main_menu_frame);
-
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge_btn = challenge_window->findButton(lid.c_str());
-				assert(challenge_btn);
-				challenge_btn->select();
-			}, false, false);
-		if ( auto text = prompt->findField("text") )
-		{
-			SDL_Rect pos = text->getSize();
-			pos.y -= 4;
-			text->setSize(pos);
-		}
-	}
-
-	const int hoursLeftWarning = 12;
-	static void playChallengeVerifyEvent(Button& button)
-	{
-		static std::string lid;
-		lid = button.getName();
-
-		auto prompt = monoPrompt(
-			"Loading challenge...",
-			Language::get(5860),
-			[](Button&) {
-				soundCancel();
-				closeMono();
-				assert(main_menu_frame);
-				
-				auto challenge_window = main_menu_frame->findFrame("challenge_window"); assert(challenge_window);
-				auto challenge_btn = challenge_window->findButton(lid.c_str());
-				assert(challenge_btn);
-				challenge_btn->select();
-			});
-
-		prompt->setTickCallback([](Widget& widget) {
-			Frame* frame = static_cast<Frame*>(&widget);
-
-			int throwError = 0;
-
-			std::string prompt = "Loading challenge";
-			if ( playfabUser.bLoggedIn )
-			{
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == lid )
-					{
-						if ( !e.loading )
-						{
-							if ( e.verifiedForGameStart )
-							{
-								soundActivate();
-								closeMono();
-								if ( !e.attempted || (e.attempted && lid.find("oneshot") == std::string::npos) )
-								{
-									if ( e.hoursLeft < hoursLeftWarning )
-									{
-										// warning on timer
-										playChallengeEventExpiringWarning(lid);
-										return;
-									}
-									else
-									{
-										// advance to lobby
-										playChallengeBegin(e);
-										return;
-									}
-								}
-								else
-								{
-									// hook for re-attempts
-									playChallengeEventOneshotAttempted(lid);
-								}
-							}
-							else if ( e.errorType != 0 )
-							{
-								throwError = e.errorType;
-							}
-						}
-						break;
-					}
-				}
-				
-				if ( frame->getTicks() > TICKS_PER_SECOND * 15
-					|| !playfabUser.bLoggedIn
-					|| throwError
-				)
-				{
-					closeMono();
-					if ( throwError == 2 )
-					{
-						errorPrompt(Language::get(6116), Language::get(5884), [](Button&) {
-							soundCancel();
-							closeMono();
-
-							assert(main_menu_frame);
-							destroyMainMenu();
-							createMainMenu(false);
-							});
-					}
-					else
-					{
-						errorPrompt(Language::get(6115), Language::get(5884), [](Button&) {
-							soundCancel();
-							closeMono();
-
-							assert(main_menu_frame);
-							destroyMainMenu();
-							createMainMenu(false);
-						});
-					}
-
-					// error, throw to main menu
-					return;
-				}
-			}
-
-			int dots = 1 + (frame->getTicks() % 150) / 50;
-			while ( dots > 0 )
-			{
-				prompt += '.';
-				--dots;
-			}
-			if ( auto txt = frame->findField("text") )
-			{
-				txt->setText(prompt.c_str());
-			}
-		});
-	}
-
-	static void playChallengeLoadingWindow(Button& button) {
-		playfabUser.periodicalEvents.periodicalEvents.clear();
-		playfabUser.periodicalEvents.awaitingData = false;
-		playfabUser.periodicalEvents.error = false;
-
-		if ( Mods::numCurrentModsLoaded >= 0 )
-		{
-			auto prompt = errorPrompt(
-				Language::get(6131),
-				Language::get(5884),
-				[](Button&) {
-					soundCancel();
-					closeMono();
-
-					assert(main_menu_frame);
-					auto window = main_menu_frame->findFrame("play_game_window");
-					if ( window ) {
-						if ( auto challenge_button = window->findButton("challenges") )
-						{
-							challenge_button->select();
-						}
-					}
-				});
-			return;
-		}
-
-		auto prompt = monoPrompt(
-			Language::get(6113),
-			Language::get(5860),
-			[](Button&) {
-				soundCancel();
-				closeMono();
-
-				assert(main_menu_frame);
-				auto window = main_menu_frame->findFrame("play_game_window");
-				if ( window ) {
-					if ( auto challenge_button = window->findButton("challenges") )
-					{
-						challenge_button->select();
-					}
-				}
-			});
-		if ( !playfabUser.bLoggedIn )
-		{
-			if ( playfabUser.authenticationRefresh > 0
-				&& playfabUser.authenticationRefresh < TICKS_PER_SECOND * 60 )
-			{
-				playfabUser.authenticationRefresh = 1; // try force login
-			}
-		}
-		prompt->setTickCallback([](Widget& widget) {
-			Frame* frame = static_cast<Frame*>(&widget);
-
-			if ( frame->getTicks() > TICKS_PER_SECOND * 15 || playfabUser.periodicalEvents.error )
-			{
-				closeMono();
-				errorPrompt(playfabUser.periodicalEvents.error ? Language::get(6117) : Language::get(6114),
-					Language::get(5884), [](Button&) {
-					soundCancel();
-					closeMono();
-
-					assert(main_menu_frame);
-					auto window = main_menu_frame->findFrame("play_game_window");
-					if ( window ) {
-						if ( auto challenge_button = window->findButton("challenges") )
-						{
-							challenge_button->select();
-						}
-					}
-				});
-
-				// error
-				return;
-			}
-
-			std::string prompt = Language::get(6113);
-			if ( playfabUser.bLoggedIn && !playfabUser.periodicalEvents.error )
-			{
-				if ( !playfabUser.periodicalEvents.awaitingData 
-					&& playfabUser.periodicalEvents.periodicalEvents.size() == 0 )
-				{
-					playfabUser.periodicalEvents.getPeriodicalEvents();
-					if ( playfabUser.periodicalEvents.awaitingData )
-					{
-						// in transit
-					}
-					else
-					{
-						// unknown failure
-					}
-				}
-				else if ( playfabUser.periodicalEvents.awaitingData )
-				{
-					prompt = "Fetching data";
-				}
-				else if ( !playfabUser.periodicalEvents.awaitingData 
-					&& playfabUser.periodicalEvents.periodicalEvents.size() == 3 )
-				{
-					// success
-					closeMono();
-					soundActivate();
-
-					// remove "Play Game" window
-					auto window = main_menu_frame->findFrame("play_game_window");
-					if ( window ) {
-						window = static_cast<Frame*>(window->getParent());
-						window->removeSelf();
-					}
-
-					playChallenge();
-					return;
-				}
-			}
-
-			int dots = 1 + (frame->getTicks() % 150) / 50;
-			while ( dots > 0 )
-			{
-				prompt += '.';
-				--dots;
-			}
-			if ( auto txt = frame->findField("text") )
-			{
-				txt->setText(prompt.c_str());
-			}
-		});
-	}
-
-	static void playChallenge() {
-		multiplayer = SINGLE;
-
-		auto dimmer = main_menu_frame->addFrame("dimmer");
-		dimmer->setSize(SDL_Rect{ 0, 0, Frame::virtualScreenX, Frame::virtualScreenY });
-		dimmer->setActualSize(dimmer->getSize());
-		dimmer->setColor(makeColor(0, 0, 0, 63));
-		dimmer->setBorder(0);
-
-		auto window = dimmer->addFrame("challenge_window");
-		window->setSize(SDL_Rect{
-			(Frame::virtualScreenX - 404) / 2,
-			(Frame::virtualScreenY - 426) / 2,
-			404,
-			426 });
-		window->setColor(0);
-		window->setBorder(0);
-
-		auto background = window->addImage(
-			SDL_Rect{ 0, 0, window->getSize().w, window->getSize().h },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/UI_SeedMenu_Window02.png",
-			"background"
-		);
-
-		{
-			auto side_panel = window->addFrame("side_panel");
-			side_panel->setSize(SDL_Rect{ window->getSize().w - 16, 16, 304, window->getSize().h - 16 });
-			SDL_Rect pos = window->getSize();
-			pos.w += (side_panel->getSize().x - (window->getSize().w)) + side_panel->getSize().w;
-			window->setSize(pos);
-
-			auto details_panel = side_panel->addFrame("details");
-			details_panel->setSize(SDL_Rect{ 0, 0, side_panel->getSize().w, side_panel->getSize().h});
-			auto details_bg = details_panel->addImage(SDL_Rect{ 0, 0, 304, 194 }, 0xFFFFFFFF,
-				"*images/ui/Main Menus/Challenges/seed_oneshot-panel00.png",
-				"details_bg");
-
-			side_panel->setTickCallback([](Widget& widget) {
-				Frame* root = static_cast<Frame*>(&widget);
-				Frame* frame = root->findFrame("details");
-				if ( !frame )
-				{
-					return;
-				}
-
-				frame->setDisabled(true);
-
-				static std::string previous_rules;
-				auto rules_frame = frame->findFrame("rules_frame");
-				if ( rules_frame )
-				{
-					if ( rules_frame->isDisabled() ) { previous_rules = ""; }
-					rules_frame->setDisabled(true);
-				}
-
-				if ( playfabUser.periodicalEvents.periodicalEvents.empty() )
-				{
-					return;
-				}
-
-				int eventIndex = -1;
-				if ( Frame* parent = static_cast<Frame*>(root->getParent()) )
-				{
-					if ( auto btn = parent->findButton("lid_victory_seed_oneshot") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_oneshot" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-					if ( auto btn = parent->findButton("challenge1_leaderboards") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_oneshot" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-					if ( auto btn = parent->findButton("lid_victory_seed_unlimited") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_unlimited" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-					if ( auto btn = parent->findButton("challenge2_leaderboards") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_unlimited" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-					if ( auto btn = parent->findButton("lid_victory_seed_challenge") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_challenge" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-					if ( auto btn = parent->findButton("challenge3_leaderboards") )
-					{
-						if ( btn->isSelected() )
-						{
-							int tmp = -1;
-							for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-							{
-								++tmp;
-								if ( e.lid == "lid_victory_seed_challenge" )
-								{
-									eventIndex = tmp;
-									break;
-								}
-							}
-						}
-					}
-				}
-				
-				frame->setDisabled(false);
-				if ( eventIndex == -1 )
-				{
-					return;
-				}
-
-				auto& e = playfabUser.periodicalEvents.periodicalEvents[eventIndex];
-				if ( e.locked )
-				{
-					frame->setDisabled(true);
-				}
-
-				if ( Field* txt = frame->findField("details_race") )
-				{
-					if ( e.scenarioInfo.race == -1 )
-					{
-						txt->setText(Language::get(6161));
-						txt->setColor(makeColor(255, 255, 255, 255));
-					}
-					else if ( e.scenarioInfo.race >= RACE_HUMAN && e.scenarioInfo.race < RACE_INSECTOID )
-					{
-						std::string s = getMonsterLocalizedName(getMonsterFromPlayerRace(e.scenarioInfo.race));
-						camelCaseString(s);
-						txt->setText(s.c_str());
-						if ( e.scenarioInfo.race == RACE_HUMAN )
-						{
-							txt->setColor(hudColors.characterBaseClassText);
-						}
-						else if ( e.scenarioInfo.race >= RACE_SKELETON && e.scenarioInfo.race <= RACE_GOATMAN )
-						{
-							txt->setColor(hudColors.characterDLC1ClassText);
-						}
-						else if ( e.scenarioInfo.race >= RACE_AUTOMATON && e.scenarioInfo.race <= RACE_INSECTOID )
-						{
-							txt->setColor(hudColors.characterDLC2ClassText);
-						}
-					}
-				}
-				if ( Field* txt = frame->findField("details_class") )
-				{
-					if ( e.scenarioInfo.classnum == -1 )
-					{
-						txt->setText(Language::get(6161));
-						txt->setColor(makeColor(255, 255, 255, 255));
-					}
-					else if ( e.scenarioInfo.classnum >= 0 && e.scenarioInfo.classnum < NUMCLASSES )
-					{
-						std::string s = playerClassLangEntry(e.scenarioInfo.classnum, 0);
-						camelCaseString(s);
-						txt->setText(s.c_str());
-						if ( e.scenarioInfo.classnum <= CLASS_MONK )
-						{
-							txt->setColor(hudColors.characterBaseClassText);
-						}
-						else if ( e.scenarioInfo.classnum >= CLASS_CONJURER && e.scenarioInfo.classnum <= CLASS_BREWER )
-						{
-							txt->setColor(hudColors.characterDLC1ClassText);
-						}
-						else if ( e.scenarioInfo.classnum >= CLASS_MACHINIST && e.scenarioInfo.classnum <= CLASS_HUNTER )
-						{
-							txt->setColor(hudColors.characterDLC2ClassText);
-						}
-					}
-				}
-				if ( Field* txt = frame->findField("gamemode") )
-				{
-					if ( e.scenarioInfo.setFlags & SV_FLAG_CLASSIC )
-					{
-						txt->setText(Language::get(6076));
-					}
-					else
-					{
-						txt->setText(Language::get(6072));
-					}
-				}
-
-				if ( eventIndex == 2 && !e.locked )
-				{
-					rules_frame->setDisabled(false);
-					if ( Field* txt = rules_frame->findField("ruleset") )
-					{
-						txt->clearLinesToColor();
-
-						std::string rules;
-						switch ( e.scenarioInfo.eventType )
-						{
-							default:
-								rules_frame->setDisabled(true);
-							break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_XP_250:
-								rules.append("Quick Learner:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append(std::to_string(e.scenarioInfo.globalXPPercent));
-								rules.append("% Kill EXP");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_NOXP_LVL_20:
-								rules.append("Maxed Out:");
-								rules.append("\n");
-								rules.append(u8"\x1E Base Character LVL: ");
-								rules.append(std::to_string((e.scenarioInfo.addStats->EXP) / 100 + 1));
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append(std::to_string(e.scenarioInfo.globalXPPercent));
-								rules.append("% Kill EXP");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_SHOPPING_SPREE:
-								rules.append("Shopping Spree:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("+");
-								rules.append(std::to_string(e.scenarioInfo.addStats->GOLD));
-								rules.append(" Gold");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("+");
-								rules.append(std::to_string(e.scenarioInfo.addStats->getProficiency(PRO_TRADING)));
-								rules.append(" Trading skill");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("Start Map: Minetown");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_BFG:
-								rules.append("BFG:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("Start with a +99 blessed arbalest");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append(std::to_string(e.scenarioInfo.addStats->CON));
-								rules.append(" base CON");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_KILLS_FURNITURE:
-								rules.append("Removalist:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("To Win: Destroy ");
-								rules.append(std::to_string(e.scenarioInfo.numKills));
-								rules.append(" pieces of furniture");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_KILLS_MONSTERS:
-								rules.append("Slayer:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("To Win: Slay any ");
-								rules.append(std::to_string(e.scenarioInfo.numKills));
-								rules.append(" monsters");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_NOSKILLS:
-								rules.append("Purist:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("Skills are unable to increase");
-								break;
-							case GameModeManager_t::CurrentSession_t::ChallengeRun_t::ChallengeEvents_t::CHEVENT_STRONG_TRAPS:
-								rules.append("The One Where Dungeon Traps Are Stronger:");
-								rules.append("\n");
-								rules.append(u8"\x1E ");
-								rules.append("Avoid deadlier traps");
-								break;
-						}
-
-						if ( rules != previous_rules )
-						{
-							previous_rules = rules;
-							txt->setText(rules.c_str());
-							txt->reflowTextToFit(0);
-						}
-
-						txt->addColorToLine(0, makeColor(178, 131, 84, 255));
-						std::string checkStr = txt->getText();
-						auto find = checkStr.find(":");
-						if ( find != std::string::npos )
-						{
-							int lines = 1;
-							for ( size_t c = 0; c < find; ++c )
-							{
-								if ( checkStr.at(c) == '\n' )
-								{
-									txt->addColorToLine(lines, makeColor(178, 131, 84, 255));
-									++lines;
-								}
-							}
-						}
-					}
-				}
-				});
-
-			auto details_header = details_panel->addField("details_header", 64);
-			details_header->setText(Language::get(6158));
-			details_header->setFont(smallfont_outline);
-			details_header->setJustify(Field::justify_t::CENTER);
-			details_header->setSize(SDL_Rect{ 80, 45, 144, 28 });
-
-			auto details_race_header = details_panel->addField("details_race_header", 64);
-			details_race_header->setText(Language::get(6159));
-			details_race_header->setColor(makeColor(178, 131, 84, 255));
-			details_race_header->setFont(smallfont_outline);
-			details_race_header->setHJustify(Field::justify_t::CENTER);
-			details_race_header->setVJustify(Field::justify_t::TOP);
-			details_race_header->setSize(SDL_Rect{ 38, 76, 110, 28 });
-
-			auto details_race = details_panel->addField("details_race", 64);
-			details_race->setText("");
-			details_race->setFont(smallfont_outline);
-			details_race->setHJustify(Field::justify_t::CENTER);
-			details_race->setVJustify(Field::justify_t::TOP);
-			details_race->setSize(SDL_Rect{ 38, details_race_header->getSize().y + 20, 110, 28 });
-
-			auto details_class_header = details_panel->addField("details_class_header", 64);
-			details_class_header->setText(Language::get(6160));
-			details_class_header->setColor(makeColor(178, 131, 84, 255));
-			details_class_header->setFont(smallfont_outline);
-			details_class_header->setHJustify(Field::justify_t::CENTER);
-			details_class_header->setVJustify(Field::justify_t::TOP);
-			details_class_header->setSize(SDL_Rect{ 158, 76, 110, 28 });
-
-			auto details_class = details_panel->addField("details_class", 64);
-			details_class->setText("");
-			details_class->setFont(smallfont_outline);
-			details_class->setHJustify(Field::justify_t::CENTER);
-			details_class->setVJustify(Field::justify_t::TOP);
-			details_class->setSize(SDL_Rect{ 158, details_class_header->getSize().y + 20, 110, 28});
-
-			auto gamemode_header = details_panel->addField("gamemode_header", 64);
-			gamemode_header->setText(Language::get(6162));
-			gamemode_header->setColor(makeColor(178, 131, 84, 255));
-			gamemode_header->setFont(smallfont_outline);
-			gamemode_header->setHJustify(Field::justify_t::CENTER);
-			gamemode_header->setVJustify(Field::justify_t::TOP);
-			gamemode_header->setSize(SDL_Rect{ details_race_header->getSize().x, 
-				details_class->getSize().y + 8 + 20, 
-				details_class_header->getSize().x + details_class_header->getSize().w - details_race_header->getSize().x, 28});
-
-			auto gamemode = details_panel->addField("gamemode", 64);
-			gamemode->setText("");
-			gamemode->setFont(smallfont_outline);
-			gamemode->setHJustify(Field::justify_t::CENTER);
-			gamemode->setVJustify(Field::justify_t::TOP);
-			gamemode->setSize(SDL_Rect{ gamemode_header->getSize().x, gamemode_header->getSize().y + 20, gamemode_header->getSize().w, 28});
-
-			auto rules_frame = details_panel->addFrame("rules_frame");
-			SDL_Rect rulesPos{ 0, 194 + 0, 304, 266 };
-			rules_frame->setSize(rulesPos);
-
-			auto rules_bg = rules_frame->addImage(SDL_Rect{ 0, 0, 304, 266 }, 
-				0xFFFFFFFF,
-				"*images/ui/Main Menus/Challenges/seed_rules-panel00.png",
-				"rules_img");
-
-			auto ruleset_header = rules_frame->addField("ruleset_header", 64);
-			ruleset_header->setText(Language::get(6163));
-			ruleset_header->setFont(smallfont_outline);
-			ruleset_header->setHJustify(Field::justify_t::CENTER);
-			ruleset_header->setVJustify(Field::justify_t::TOP);
-			ruleset_header->setSize(SDL_Rect{ gamemode_header->getSize().x,
-				21,
-				gamemode_header->getSize().w, 28});
-
-			auto ruleset = rules_frame->addField("ruleset", 1024);
-			ruleset->setText("");
-			ruleset->setFont(smallfont_outline);
-			ruleset->setHJustify(Field::justify_t::LEFT);
-			ruleset->setVJustify(Field::justify_t::TOP);
-			ruleset->setSize(SDL_Rect{ ruleset_header->getSize().x, ruleset_header->getSize().y + 20 + 7, 228, 
-				rules_frame->getSize().h - (ruleset_header->getSize().y + 20)});
-		}
-
-
-		auto banner_title = window->addField("banner", 32);
-		banner_title->setSize(SDL_Rect{ 404 / 2 - 196 / 2, 10, 196, 48 });
-		banner_title->setText(Language::get(6119));
-		banner_title->setFont(smallfont_outline);
-		banner_title->setJustify(Field::justify_t::CENTER);
-
-		auto tooltip = window->addField("tooltip", 128);
-		tooltip->setSize(SDL_Rect{ 54, window->getSize().h - 94, 296, 46 });
-		tooltip->setText(Language::get(6119));
-		tooltip->setFont(smallfont_outline);
-		tooltip->setJustify(Field::justify_t::CENTER);
-		tooltip->setColor(makeColor(183, 155, 119, 255));
-		tooltip->setTickCallback([](Widget& widget) {
-			Field* txt = static_cast<Field*>(&widget);
-			if ( Frame* parent = static_cast<Frame*>(txt->getParent()) )
-			{
-				if ( auto btn = parent->findButton("lid_victory_seed_oneshot") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6120));
-					}
-				}
-				if ( auto btn = parent->findButton("challenge1_leaderboards") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6120));
-					}
-				}
-				if ( auto btn = parent->findButton("lid_victory_seed_unlimited") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6121));
-					}
-				}
-				if ( auto btn = parent->findButton("challenge2_leaderboards") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6121));
-					}
-				}
-				if ( auto btn = parent->findButton("lid_victory_seed_challenge") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6122));
-					}
-				}
-				if ( auto btn = parent->findButton("challenge3_leaderboards") )
-				{
-					if ( btn->isSelected() )
-					{
-						txt->setText(Language::get(6122));
-					}
-				}
-			}
-			});
-
-		const int baseX = 0;
-		const int baseY = 4;
-
-		auto challenge1_time = window->addImage(
-			SDL_Rect{baseX + 254, baseY + 72, 102, 30},
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/UI_SeedMenu_Period00.png",
-			"challenge1_time"
-		);
-
-		auto challenge1_completion = window->addImage(
-			SDL_Rect{ baseX + 34, baseY + 78, 40, 46 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/seed_attempted.png",
-			"challenge1_completion"
-		);
-		challenge1_completion->disabled = true;
-
-		if ( auto challenge1_time_txt = window->addField("challenge1_time_txt", 128) )
-		{
-			SDL_Rect pos = challenge1_time->pos;
-			pos.x += 24 + 4;
-			pos.y += 6;
-			pos.w = 72;
-			pos.h = 22;
-			challenge1_time_txt->setSize(pos);
-			challenge1_time_txt->setFont(smallfont_outline);
-			challenge1_time_txt->setText("-");
-			challenge1_time_txt->setColor(makeColor(183, 155, 119, 255));
-			challenge1_time_txt->setHJustify(Field::justify_t::LEFT);
-			challenge1_time_txt->setVJustify(Field::justify_t::TOP);
-			challenge1_time_txt->setTickCallback([](Widget& widget) {
-				Field* txt = static_cast<Field*>(&widget);
-				txt->setColor(makeColor(183, 155, 119, 255));
-
-				Frame::image_t* completion_img = nullptr;
-				if ( auto frame = static_cast<Frame*>(widget.getParent()) )
-				{
-					completion_img = frame->findImage("challenge1_completion");
-				}
-
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == "lid_victory_seed_oneshot" )
-					{
-						std::string timeLeft = "";
-						char buf[128] = "";
-						if ( e.hoursLeft >= 24 )
-						{
-							int days = e.hoursLeft / 24;
-							int hours = e.hoursLeft - days * 24;
-							snprintf(buf, sizeof(buf), "%dd %dh", days, hours);
-						}
-						else
-						{
-							snprintf(buf, sizeof(buf), "%dh %dm", e.hoursLeft, e.minutesLeft);
-							if ( e.hoursLeft < hoursLeftWarning )
-							{
-								txt->setColor(hudColors.characterSheetRed);
-							}
-						}
-						if ( completion_img )
-						{
-							completion_img->disabled = !e.attempted || e.locked;
-						}
-						txt->setText(buf);
-						break;
-					}
-				}
-				});
-		}
-
-		auto challenge1_leaderboard_img = window->addImage(
-			SDL_Rect{ baseX + 260, baseY + 110, 22, 18 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/leaderboard_icon.png",
-			"challenge1_leaderboards_img"
-		);
-		challenge1_leaderboard_img->disabled = true;
-
-		if ( auto challenge1_button = window->addButton("lid_victory_seed_oneshot") )
-		{
-			challenge1_button->setSize(SDL_Rect{ baseX + 80, baseY + 70, 168, 62 });
-			challenge1_button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-			challenge1_button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-			challenge1_button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-			challenge1_button->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge1_button->setColor(makeColor(255, 255, 255, 255));
-			challenge1_button->setText(Language::get(6110));
-			challenge1_button->setFont(smallfont_outline);
-			challenge1_button->setWidgetSearchParent(window->getName());
-			challenge1_button->setWidgetDown("lid_victory_seed_unlimited");
-			challenge1_button->setWidgetRight("challenge1_leaderboards");
-			challenge1_button->setWidgetBack("back_button");
-			challenge1_button->setTickCallback([](Widget& widget) {
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					Button* button = static_cast<Button*>(&widget);
-					if ( e.lid == button->getName() )
-					{
-						Frame* parent = static_cast<Frame*>(widget.getParent());
-						auto leaderboard_btn = parent->findButton(button->getWidgetMovements().at("MenuRight").c_str());
-						if ( leaderboard_btn )
-						{
-							leaderboard_btn->setDisabled(e.locked);
-							leaderboard_btn->setInvisible(e.locked);
-							std::string imgPath = leaderboard_btn->getName();
-							imgPath += "_img";
-							if ( auto leaderboard_img = parent->findImage(imgPath.c_str()) )
-							{
-								leaderboard_img->disabled = leaderboard_btn->isInvisible();
-							}
-						}
-
-						if ( e.locked )
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/Disabled_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/Disabled_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/Disabled_ButtonPress_00.png");
-						}
-						else
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-						}
-
-						break;
-					}
-				}
-				});
-			challenge1_button->setCallback([](Button& button) {
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == button.getName() )
-					{
-						if ( e.locked )
-						{
-							soundError();
-							return;
-						}
-						e.verifyGameStartSeedForEvent();
-						break;
-					}
-				}
-				soundActivate();
-				playChallengeVerifyEvent(button);
-			});
-			challenge1_button->select();
-		}
-
-		if ( auto challenge1_leaderboards = window->addButton("challenge1_leaderboards") )
-		{
-			challenge1_leaderboards->setSize(SDL_Rect{ baseX + 284, baseY + 106, 72, 26 });
-			challenge1_leaderboards->setBackground("*images/ui/Main Menus/Challenges/tinybtn_base.png");
-			challenge1_leaderboards->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/tinybtn_h.png");
-			challenge1_leaderboards->setBackgroundActivated("*images/ui/Main Menus/Challenges/tinybtn_press.png");
-			challenge1_leaderboards->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge1_leaderboards->setColor(makeColor(255, 255, 255, 255));
-			challenge1_leaderboards->setText("View");
-			challenge1_leaderboards->setDisabled(true);
-			challenge1_leaderboards->setInvisible(true);
-			challenge1_leaderboards->setFont(smallfont_outline);
-			challenge1_leaderboards->setWidgetSearchParent(window->getName());
-			challenge1_leaderboards->setWidgetDown("challenge2_leaderboards");
-			challenge1_leaderboards->setWidgetLeft("lid_victory_seed_oneshot");
-			challenge1_leaderboards->setWidgetBack("back_button");
-			challenge1_leaderboards->setCallback([](Button&) {
-				soundActivate();
-				createLeaderboards("lid_seed_oneshot");
-				});
-		}
-
-		auto challenge2_time = window->addImage(
-			SDL_Rect{ baseX + 254, baseY + 142, 102, 30 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/UI_SeedMenu_Period00.png",
-			"challenge2_time"
-		);
-
-		auto challenge2_completion = window->addImage(
-			SDL_Rect{ baseX + 34, baseY + 148, 40, 46 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/seed_attempted.png",
-			"challenge2_completion"
-		);
-		challenge2_completion->disabled = true;
-
-		if ( auto challenge2_time_txt = window->addField("challenge2_time_txt", 128) )
-		{
-			SDL_Rect pos = challenge2_time->pos;
-			pos.x += 24 + 4;
-			pos.y += 6;
-			pos.w = 72;
-			pos.h = 22;
-			challenge2_time_txt->setSize(pos);
-			challenge2_time_txt->setFont(smallfont_outline);
-			challenge2_time_txt->setText("-");
-			challenge2_time_txt->setColor(makeColor(183, 155, 119, 255));
-			challenge2_time_txt->setHJustify(Field::justify_t::LEFT);
-			challenge2_time_txt->setVJustify(Field::justify_t::TOP);
-			challenge2_time_txt->setTickCallback([](Widget& widget) {
-				Field* txt = static_cast<Field*>(&widget);
-				txt->setColor(makeColor(183, 155, 119, 255));
-
-				Frame::image_t* completion_img = nullptr;
-				if ( auto frame = static_cast<Frame*>(widget.getParent()) )
-				{
-					completion_img = frame->findImage("challenge2_completion");
-				}
-
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == "lid_victory_seed_unlimited" )
-					{
-						std::string timeLeft = "";
-						char buf[128] = "";
-						if ( e.hoursLeft >= 24 )
-						{
-							int days = e.hoursLeft / 24;
-							int hours = e.hoursLeft - days * 24;
-							snprintf(buf, sizeof(buf), "%dd %dh", days, hours);
-						}
-						else
-						{
-							snprintf(buf, sizeof(buf), "%dh %dm", e.hoursLeft, e.minutesLeft);
-							if ( e.hoursLeft < hoursLeftWarning )
-							{
-								txt->setColor(hudColors.characterSheetRed);
-							}
-						}
-						if ( completion_img )
-						{
-							completion_img->disabled = !e.attempted || e.locked;
-						}
-						txt->setText(buf);
-						break;
-					}
-				}
-				});
-		}
-
-		auto challenge2_leaderboard_img = window->addImage(
-			SDL_Rect{ baseX + 260, baseY + 180, 22, 18 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/leaderboard_icon.png",
-			"challenge2_leaderboards_img"
-		);
-		challenge2_leaderboard_img->disabled = true;
-
-		if ( auto challenge2_button = window->addButton("lid_victory_seed_unlimited") )
-		{
-			challenge2_button->setSize(SDL_Rect{ baseX + 80, baseY + 140, 168, 62 });
-			challenge2_button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-			challenge2_button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-			challenge2_button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-			challenge2_button->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge2_button->setColor(makeColor(255, 255, 255, 255));
-			challenge2_button->setText(Language::get(6111));
-			challenge2_button->setFont(smallfont_outline);
-			challenge2_button->setWidgetSearchParent(window->getName());
-			challenge2_button->setWidgetUp("lid_victory_seed_oneshot");
-			challenge2_button->setWidgetDown("lid_victory_seed_challenge");
-			challenge2_button->setWidgetRight("challenge2_leaderboards");
-			challenge2_button->setWidgetBack("back_button");
-			challenge2_button->setTickCallback([](Widget& widget) {
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					Button* button = static_cast<Button*>(&widget);
-					if ( e.lid == button->getName() )
-					{
-						Frame* parent = static_cast<Frame*>(widget.getParent());
-						auto leaderboard_btn = parent->findButton(button->getWidgetMovements().at("MenuRight").c_str());
-						if ( leaderboard_btn )
-						{
-							leaderboard_btn->setDisabled(e.locked);
-							leaderboard_btn->setInvisible(e.locked);
-							std::string imgPath = leaderboard_btn->getName();
-							imgPath += "_img";
-							if ( auto leaderboard_img = parent->findImage(imgPath.c_str()) )
-							{
-								leaderboard_img->disabled = leaderboard_btn->isInvisible();
-							}
-						}
-
-						if ( e.locked )
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/Disabled_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/Disabled_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/Disabled_ButtonPress_00.png");
-						}
-						else
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-						}
-						break;
-					}
-				}
-				});
-			challenge2_button->setCallback([](Button& button) {
-				soundActivate();
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == button.getName() )
-					{
-						if ( e.locked )
-						{
-							soundError();
-							return;
-						}
-						e.verifyGameStartSeedForEvent();
-						break;
-					}
-				}
-				playChallengeVerifyEvent(button);
-				});
-		}
-
-		if ( auto challenge2_leaderboards = window->addButton("challenge2_leaderboards") )
-		{
-			challenge2_leaderboards->setSize(SDL_Rect{ baseX + 284, baseY + 176, 72, 26 });
-			challenge2_leaderboards->setBackground("*images/ui/Main Menus/Challenges/tinybtn_base.png");
-			challenge2_leaderboards->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/tinybtn_h.png");
-			challenge2_leaderboards->setBackgroundActivated("*images/ui/Main Menus/Challenges/tinybtn_press.png");
-			challenge2_leaderboards->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge2_leaderboards->setColor(makeColor(255, 255, 255, 255));
-			challenge2_leaderboards->setText("View");
-			challenge2_leaderboards->setDisabled(true);
-			challenge2_leaderboards->setInvisible(true);
-			challenge2_leaderboards->setFont(smallfont_outline);
-			challenge2_leaderboards->setWidgetSearchParent(window->getName());
-			challenge2_leaderboards->setWidgetUp("challenge1_leaderboards");
-			challenge2_leaderboards->setWidgetDown("challenge3_leaderboards");
-			challenge2_leaderboards->setWidgetLeft("lid_victory_seed_unlimited");
-			challenge2_leaderboards->setWidgetBack("back_button");
-			challenge2_leaderboards->setCallback([](Button&) {
-				soundActivate();
-				createLeaderboards("lid_seed_unlimited");
-				});
-		}
-
-		auto challenge3_time = window->addImage(
-			SDL_Rect{ baseX + 254, baseY + 212, 102, 30 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/UI_SeedMenu_Period00.png",
-			"challenge3_time"
-		);
-
-		auto challenge3_completion = window->addImage(
-			SDL_Rect{ baseX + 34, baseY + 218, 40, 46 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/seed_attempted.png",
-			"challenge3_completion"
-		);
-		challenge3_completion->disabled = true;
-
-		if ( auto challenge3_time_txt = window->addField("challenge3_time_txt", 128) )
-		{
-			SDL_Rect pos = challenge3_time->pos;
-			pos.x += 24 + 4;
-			pos.y += 6;
-			pos.w = 72;
-			pos.h = 72;
-			challenge3_time_txt->setSize(pos);
-			challenge3_time_txt->setFont(smallfont_outline);
-			challenge3_time_txt->setText("-");
-			challenge3_time_txt->setColor(makeColor(183, 155, 119, 255));
-			challenge3_time_txt->setHJustify(Field::justify_t::LEFT);
-			challenge3_time_txt->setVJustify(Field::justify_t::TOP);
-			challenge3_time_txt->setPaddingPerLine(-6);
-			challenge3_time_txt->setTickCallback([](Widget& widget) {
-				Field* txt = static_cast<Field*>(&widget);
-				txt->setColor(makeColor(183, 155, 119, 255));
-
-				Frame::image_t* completion_img = nullptr;
-				Frame::image_t* time_img = nullptr;
-				if ( auto frame = static_cast<Frame*>(widget.getParent()) )
-				{
-					time_img = frame->findImage("challenge3_time");
-					completion_img = frame->findImage("challenge3_completion");
-				}
-
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == "lid_victory_seed_challenge" )
-					{
-						std::string timeLeft = "";
-						char buf[128] = "";
-						if ( e.hoursLeft >= 24 )
-						{
-							int days = e.hoursLeft / 24;
-							int hours = e.hoursLeft - days * 24;
-							if ( e.locked )
-							{
-								snprintf(buf, sizeof(buf), "%s\n%dd %dh", Language::get(6118), days, hours);
-							}
-							else
-							{
-								snprintf(buf, sizeof(buf), "%dd %dh", days, hours);
-							}
-						}
-						else
-						{
-							if ( e.locked )
-							{
-								snprintf(buf, sizeof(buf), "%s\n%dh %dm", Language::get(6118), e.hoursLeft, e.minutesLeft);
-							}
-							else
-							{
-								snprintf(buf, sizeof(buf), "%dh %dm", e.hoursLeft, e.minutesLeft);
-							}
-							if ( e.hoursLeft < hoursLeftWarning )
-							{
-								txt->setColor(hudColors.characterSheetRed);
-							}
-						}
-
-						if ( e.locked )
-						{
-							txt->setColor(makeColor(128, 128, 128, 255));
-						}
-
-						if ( time_img )
-						{
-							if ( e.locked )
-							{
-								time_img->path = "*images/ui/Main Menus/Challenges/UI_SeedMenu_Period_Large00.png";
-								time_img->pos.h = 58;
-							}
-							else
-							{
-								time_img->path = "*images/ui/Main Menus/Challenges/UI_SeedMenu_Period00.png";
-								time_img->pos.h = 30;
-							}
-						}
-						if ( completion_img )
-						{
-							completion_img->disabled = !e.attempted || e.locked;
-						}
-						txt->setText(buf);
-						break;
-					}
-				}
-				});
-		}
-
-		auto challenge3_leaderboard_img = window->addImage(
-			SDL_Rect{ baseX + 260, baseY + 250, 22, 18 },
-			0xffffffff,
-			"*images/ui/Main Menus/Challenges/leaderboard_icon.png",
-			"challenge3_leaderboards_img"
-		);
-		challenge3_leaderboard_img->disabled = true;
-
-		if ( auto challenge3_button = window->addButton("lid_victory_seed_challenge") )
-		{
-			challenge3_button->setSize(SDL_Rect{ baseX + 80, baseY + 210, 168, 62 });
-			challenge3_button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-			challenge3_button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-			challenge3_button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-			challenge3_button->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge3_button->setColor(makeColor(255, 255, 255, 255));
-			challenge3_button->setText(Language::get(6112));
-			challenge3_button->setFont(smallfont_outline);
-			challenge3_button->setWidgetSearchParent(window->getName());
-			challenge3_button->setWidgetUp("lid_victory_seed_unlimited");
-			challenge3_button->setWidgetRight("challenge3_leaderboards");
-			challenge3_button->setWidgetBack("back_button");
-			challenge3_button->setTickCallback([](Widget& widget) {
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					Button* button = static_cast<Button*>(&widget);
-					Frame* parent = static_cast<Frame*>(widget.getParent());
-					auto leaderboard_btn = parent->findButton(button->getWidgetMovements().at("MenuRight").c_str());
-					if ( leaderboard_btn ) 
-					{ 
-						leaderboard_btn->setDisabled(e.locked); 
-						leaderboard_btn->setInvisible(e.locked); 
-						std::string imgPath = leaderboard_btn->getName();
-						imgPath += "_img";
-						if ( auto leaderboard_img = parent->findImage(imgPath.c_str()) )
-						{
-							leaderboard_img->disabled = leaderboard_btn->isInvisible();
-						}
-					}
-
-
-					if ( e.lid == button->getName() )
-					{
-						if ( e.locked )
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/Disabled_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/Disabled_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/Disabled_ButtonPress_00.png");
-						}
-						else
-						{
-							button->setBackground("*images/ui/Main Menus/Challenges/UI_SeedMenu_Button_00.png");
-							button->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonHigh_00.png");
-							button->setBackgroundActivated("*images/ui/Main Menus/Challenges/UI_SeedMenu_ButtonPress_00.png");
-						}
-						break;
-					}
-				}
-			});
-			challenge3_button->setCallback([](Button& button) {
-				soundActivate();
-				for ( auto& e : playfabUser.periodicalEvents.periodicalEvents )
-				{
-					if ( e.lid == button.getName() )
-					{
-						if ( e.locked )
-						{
-							soundError();
-							return;
-						}
-						e.verifyGameStartSeedForEvent();
-						break;
-					}
-				}
-				playChallengeVerifyEvent(button);
-				});
-		}
-
-		if ( auto challenge3_leaderboards = window->addButton("challenge3_leaderboards") )
-		{
-			challenge3_leaderboards->setSize(SDL_Rect{ baseX + 284, baseY + 246, 72, 26 });
-			challenge3_leaderboards->setBackground("*images/ui/Main Menus/Challenges/tinybtn_base.png");
-			challenge3_leaderboards->setBackgroundHighlighted("*images/ui/Main Menus/Challenges/tinybtn_h.png");
-			challenge3_leaderboards->setBackgroundActivated("*images/ui/Main Menus/Challenges/tinybtn_press.png");
-			challenge3_leaderboards->setHighlightColor(makeColor(255, 255, 255, 255));
-			challenge3_leaderboards->setColor(makeColor(255, 255, 255, 255));
-			challenge3_leaderboards->setText("View");
-			challenge3_leaderboards->setDisabled(true);
-			challenge3_leaderboards->setInvisible(true);
-			challenge3_leaderboards->setFont(smallfont_outline);
-			challenge3_leaderboards->setWidgetSearchParent(window->getName());
-			challenge3_leaderboards->setWidgetUp("challenge2_leaderboards");
-			challenge3_leaderboards->setWidgetLeft("lid_victory_seed_challenge");
-			challenge3_leaderboards->setWidgetBack("back_button");
-			challenge3_leaderboards->setCallback([](Button&) {
-				soundActivate();
-				createLeaderboards("lid_seed_challenge");
-				});
-		}
-
-		/*bool continueAvailable = anySaveFileExists();
-
-		auto hall_of_trials_button = window->addButton("hall_of_trials");
-		hall_of_trials_button->setSize(SDL_Rect{ 134, 176, 168, 52 });
-		hall_of_trials_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrials00.png");
-		hall_of_trials_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrialsHigh00.png");
-		hall_of_trials_button->setBackgroundActivated("*images/ui/Main Menus/Play/UI_PlayMenu_Button_HallofTrialsPress00.png");
-		hall_of_trials_button->setHighlightColor(makeColor(255, 255, 255, 255));
-		hall_of_trials_button->setColor(makeColor(255, 255, 255, 255));
-		hall_of_trials_button->setText(Language::get(5560));
-		hall_of_trials_button->setFont(smallfont_outline);
-		hall_of_trials_button->setWidgetSearchParent(window->getName());
-		if ( continueAvailable ) {
-			hall_of_trials_button->setWidgetUp("continue");
-		}
-		else {
-			hall_of_trials_button->setWidgetUp("new");
-		}
-		hall_of_trials_button->setWidgetBack("back_button");
-		hall_of_trials_button->setCallback([](Button&) {
-			soundActivate();
-			createHallofTrialsMenu();
-			});*/
-
-		(void)createBackWidget(window, [](Button& button) {
-			soundCancel();
-			auto frame = static_cast<Frame*>(button.getParent());
-			frame = static_cast<Frame*>(frame->getParent());
-			frame = static_cast<Frame*>(frame->getParent());
-			frame->removeSelf();
-			assert(main_menu_frame);
-
-			createPlayWindow();
-			}/*, SDL_Rect{ -4, -4, 0, 0 }*/);
-
-		/*auto continue_button = window->addButton("continue");
-		continue_button->setSize(SDL_Rect{ 39 * 2, 36 * 2, 66 * 2, 50 * 2 });
-		continue_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_Button_ContinueB00.png");
-		continue_button->setTextColor(makeColor(180, 180, 180, 255));
-		continue_button->setTextHighlightColor(makeColor(180, 133, 13, 255));
-		continue_button->setText(Language::get(5561));
-		continue_button->setFont(smallfont_outline);
-		if ( continueAvailable ) {
-			continue_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_Button_ContinueA00.png");
-			continue_button->setCallback([](Button& button) {soundActivate(); playContinue(button); });
-		}
-		else {
-			continue_button->setCallback([](Button&) {soundError(); });
-		}
-		continue_button->setWidgetSearchParent(window->getName());
-		continue_button->setWidgetRight("new");
-		continue_button->setWidgetDown("hall_of_trials");
-		continue_button->setWidgetBack("back_button");
-		continue_button->setGlyphPosition(Widget::glyph_position_t::CENTERED);
-		continue_button->setButtonsOffset(SDL_Rect{ 0, 29, 0, 0, });
-		continue_button->setSelectorOffset(SDL_Rect{ -1, -1, 1, 1 });
-
-		auto new_button = window->addButton("new");
-		new_button->setSize(SDL_Rect{ 114 * 2, 36 * 2, 68 * 2, 56 * 2 });
-		new_button->setBackground("*images/ui/Main Menus/Play/UI_PlayMenu_NewB00.png");
-		new_button->setBackgroundHighlighted("*images/ui/Main Menus/Play/UI_PlayMenu_NewA00.png");
-		new_button->setTextColor(makeColor(180, 180, 180, 255));
-		new_button->setTextHighlightColor(makeColor(180, 133, 13, 255));
-		new_button->setText(Language::get(5562));
-		new_button->setFont(smallfont_outline);
-		new_button->setCallback(playNew);
-		new_button->setWidgetSearchParent(window->getName());
-		new_button->setWidgetLeft("continue");
-		new_button->setWidgetDown("hall_of_trials");
-		new_button->setWidgetBack("back_button");
-		new_button->setGlyphPosition(Widget::glyph_position_t::CENTERED);
-		new_button->setButtonsOffset(SDL_Rect{ 0, 29, 0, 0, });
-		new_button->setSelectorOffset(SDL_Rect{ -1, -1, -3, -11 });*/
-
-		/*if ( !gameModeManager.Tutorial.FirstTimePrompt.showFirstTimePrompt ) {
-			if ( continueAvailable ) {
-				continue_button->select();
-			}
-			else {
-				new_button->select();
-			}
-		}
-		else {
-			hall_of_trials_button->select();
-		}*/
 	}
 #endif
 }

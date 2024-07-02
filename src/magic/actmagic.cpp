@@ -499,7 +499,7 @@ void actMagiclightBall(Entity* my)
 	}
 }
 
-void spawnBloodVialOnMonsterDeath(Entity* entity, Stat* hitstats, Entity* killer)
+void spawnBloodVialOnMonsterDeath(Entity* entity, Stat* hitstats)
 {
 	if ( !entity || !hitstats ) { return; }
 	if ( entity->behavior == &actMonster )
@@ -540,42 +540,6 @@ void spawnBloodVialOnMonsterDeath(Entity* entity, Stat* hitstats, Entity* killer
 				if ( spawnBloodVial )
 				{
 					Item* blood = newItem(FOOD_BLOOD, EXCELLENT, 0, 1, gibtype[hitstats->type] - 1, true, &hitstats->inventory);
-				}
-			}
-		}
-
-		if ( killer && (killer->behavior == &actMonster || killer->behavior == &actPlayer) )
-		{
-			if ( Stat* killerStats = killer->getStats() )
-			{
-				if ( killerStats->helmet && killerStats->helmet->type == HAT_CHEF )
-				{
-					if ( gibtype[hitstats->type] == 1 )
-					{
-						int chance = 20;
-						bool cursedChef = false;
-						if ( killerStats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(killerStats) )
-						{
-							chance -= 5 * abs(killerStats->helmet->beatitude);
-							chance = std::max(10, chance);
-						}
-						else
-						{
-							chance -= 5 * abs(killerStats->helmet->beatitude);
-							chance = std::max(10, chance);
-							cursedChef = true;
-						}
-						if ( local_rng.rand() % chance == 0 )
-						{
-							Item* meat = newItem(FOOD_MEAT, (Status)(DECREPIT + local_rng.rand() % 4),
-								0, 1, gibtype[hitstats->type], false, &hitstats->inventory);
-							if ( cursedChef )
-							{
-								meat->status = DECREPIT;
-								meat->beatitude = -(local_rng.rand() % 3);
-							}
-						}
-					}
 				}
 			}
 		}
@@ -779,7 +743,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				//element = (spellElement_t *) element->elements->first->element;
 				element = (spellElement_t*)node->element;
 				//if (hit.entity != NULL) {
-				bool mimic = hit.entity && hit.entity->isInertMimic();
 				Stat* hitstats = nullptr;
 				int player = -1;
 
@@ -821,7 +784,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 						// calculate facing angle to projectile, need to be facing projectile to reflect.
 						else if ( player >= 0 && players[player] && players[player]->entity )
 						{
-							real_t yawDiff = my->yawDifferenceFromEntity(players[player]->entity);
+							real_t yawDiff = my->yawDifferenceFromPlayer(player);
 							if ( yawDiff < (6 * PI / 5) )
 							{
 								reflection = 0;
@@ -888,16 +851,13 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									if ( reflection == 0 )
 									{
 										yourSpellHitsTheMonster = true;
-										if ( !hit.entity->isInertMimic() )
+										if ( ItemTooltips.bSpellHasBasicHitMessage(spell->ID) )
 										{
-											if ( ItemTooltips.bSpellHasBasicHitMessage(spell->ID) )
-											{
-												messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(378), Language::get(377), MSG_COMBAT_BASIC);
-											}
-											else
-											{
-												messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(378), Language::get(377), MSG_COMBAT);
-											}
+											messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(378), Language::get(377), MSG_COMBAT_BASIC);
+										}
+										else
+										{
+											messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(378), Language::get(377), MSG_COMBAT);
 										}
 									}
 								}
@@ -1150,12 +1110,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					}
 				}
 
-				int trapResist = 0;
-				if ( parent && (parent->behavior == &actMagicTrap || parent->behavior == &actMagicTrapCeiling) )
-				{
-					trapResist = hit.entity ? hit.entity->getFollowerBonusTrapResist() : 0;
-				}
-
 				// Alerting the hit Entity
 				if ( hit.entity )
 				{
@@ -1164,13 +1118,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					{
 						if ( parent->behavior == &actMagicTrap || parent->behavior == &actMagicTrapCeiling )
 						{
-							bool ignoreMoveAside = false;
-							if ( trapResist == 100 )
-							{
-								ignoreMoveAside = true;
-							}
-
-							if ( parent->behavior == &actMagicTrap && !ignoreMoveAside )
+							if ( parent->behavior == &actMagicTrap )
 							{
 								if ( static_cast<int>(parent->y / 16) == static_cast<int>(hit.entity->y / 16) )
 								{
@@ -1227,7 +1175,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									monsterMoveAside(hit.entity, hit.entity);
 								}
 							}
-							else if ( !ignoreMoveAside )
+							else
 							{
 								monsterMoveAside(hit.entity, hit.entity);
 							}
@@ -1330,18 +1278,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					}
 				}
 
-				if ( hit.entity )
-				{
-					if ( parent && (parent->behavior == &actMagicTrap || parent->behavior == &actMagicTrapCeiling) )
-					{
-						if ( trapResist != 0 )
-						{
-							damageMultiplier += -(trapResist / 100.0);
-							damageMultiplier = std::max(0.0, damageMultiplier);
-						}
-					}
-				}
-
 				real_t spellbookDamageBonus = (my->actmagicSpellbookBonus / 100.f);
 				if ( parent && parent->behavior == &actDeathGhost )
 				{
@@ -1351,14 +1287,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if ( my->actmagicCastByMagicstaff == 0 && my->actmagicCastByTinkerTrap == 0 )
 					{
-						spellbookDamageBonus += getBonusFromCasterOfSpellElement(parent, nullptr, element, spell ? spell->ID : SPELL_NONE);
-					}
-					if ( parent && (parent->behavior == &actMagicTrap || parent->behavior == &actMagicTrapCeiling) )
-					{
-						if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_STRONG_TRAPS) )
-						{
-							spellbookDamageBonus += 1.0;
-						}
+						spellbookDamageBonus += getBonusFromCasterOfSpellElement(parent, nullptr, element);
 					}
 				}
 
@@ -1366,17 +1295,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if (hit.entity)
 					{
-						if ( mimic )
-						{
-							int damage = element->damage;
-							damage += (spellbookDamageBonus * damage);
-							damage /= (1 + (int)resistance);
-							hit.entity->chestHandleDamageMagic(damage, *my, parent);
-							my->removeLightField();
-							list_RemoveNode(my->mynode);
-							return;
-						}
-						else if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
 							Entity* parent = uidToEntity(my->parent);
 							playSoundEntity(hit.entity, 28, 128);
@@ -1412,7 +1331,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							if ( hitstats->HP <= 0 && parent)
 							{
 								parent->awardXP( hit.entity, true, true );
-								spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+								spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 							}
 						}
 						else if (hit.entity->behavior == &actDoor)
@@ -1450,56 +1369,35 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							int damage = element->damage;
 							damage += (spellbookDamageBonus * damage);
 							damage /= (1 + (int)resistance);
-							int oldHP = hit.entity->furnitureHealth;
 							hit.entity->furnitureHealth -= damage;
 							if ( parent )
 							{
 								if ( parent->behavior == &actPlayer )
 								{
-									bool destroyed = oldHP > 0 && hit.entity->furnitureHealth <= 0;
-									if ( destroyed )
-									{
-										gameModeManager.currentSession.challengeRun.updateKillEvent(hit.entity);
-									}
 									switch ( hit.entity->furnitureType )
 									{
 										case FURNITURE_CHAIR:
-											if ( destroyed )
-											{
-												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
-											}
+											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
 											updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 												false, DamageGib::DMG_DEFAULT);
 											break;
 										case FURNITURE_TABLE:
-											if ( destroyed )
-											{
-												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
-											}
+											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
 											updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 												false, DamageGib::DMG_DEFAULT);
 											break;
 										case FURNITURE_BED:
-											if ( destroyed )
-											{
-												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
-											}
+											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
 											updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 												false, DamageGib::DMG_DEFAULT);
 											break;
 										case FURNITURE_BUNKBED:
-											if ( destroyed )
-											{
-												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
-											}
+											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
 											updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 												false, DamageGib::DMG_DEFAULT);
 											break;
 										case FURNITURE_PODIUM:
-											if ( destroyed )
-											{
-												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
-											}
+											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
 											updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 												false, DamageGib::DMG_DEFAULT);
 											break;
@@ -1517,29 +1415,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					spawnExplosion(my->x, my->y, my->z);
 					if (hit.entity)
 					{
-						if ( mimic )
-						{
-							int damage = element->damage;
-							damage += (spellbookDamageBonus * damage);
-							damage /= (1 + (int)resistance);
-							hit.entity->chestHandleDamageMagic(damage, *my, parent);
-							if ( my->actmagicProjectileArc > 0 )
-							{
-								Entity* caster = uidToEntity(spell->caster);
-								spawnMagicTower(caster, my->x, my->y, spell->ID, nullptr);
-							}
-							if ( !(my->actmagicIsOrbiting == 2) )
-							{
-								my->removeLightField();
-								list_RemoveNode(my->mynode);
-							}
-							else
-							{
-								spawnExplosion(my->x, my->y, my->z);
-							}
-							return;
-						}
-						else if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
 							Entity* parent = uidToEntity(my->parent);
 							playSoundEntity(hit.entity, 28, 128);
@@ -1588,7 +1464,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							if ( hitstats->HP <= 0 && parent)
 							{
 								parent->awardXP( hit.entity, true, true );
-								spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+								spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 							}
 						}
 						else if ( hit.entity->behavior == &actDoor )
@@ -1664,61 +1540,40 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							int damage = element->damage;
 							damage += (spellbookDamageBonus * damage);
 							damage /= (1 + (int)resistance);
-							int oldHP = hit.entity->furnitureHealth;
 							hit.entity->furnitureHealth -= damage;
 							if ( parent )
 							{
 								if ( parent->behavior == &actPlayer )
 								{
-									bool destroyed = oldHP > 0 && hit.entity->furnitureHealth <= 0;
-									if ( destroyed )
-									{
-										gameModeManager.currentSession.challengeRun.updateKillEvent(hit.entity);
-									}
 									switch ( hit.entity->furnitureType )
 									{
-									case FURNITURE_CHAIR:
-										if ( destroyed )
-										{
+										case FURNITURE_CHAIR:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_TABLE:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_TABLE:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BUNKBED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BUNKBED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_PODIUM:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_PODIUM:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									default:
-										break;
+											updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										default:
+											break;
 									}
 								}
 							}
@@ -1752,46 +1607,8 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 						// Attempt to set the Entity on fire
 						hit.entity->SetEntityOnFire();
 
-						if ( mimic )
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
-							int damage = element->damage;
-							damage += (spellbookDamageBonus * damage);
-							damage /= (1 + (int)resistance);
-							hit.entity->chestHandleDamageMagic(damage, *my, parent);
-							if ( my->actmagicProjectileArc > 0 )
-							{
-								Entity* caster = uidToEntity(spell->caster);
-								spawnMagicTower(caster, my->x, my->y, spell->ID, nullptr);
-							}
-							if ( !(my->actmagicIsOrbiting == 2) )
-							{
-								my->removeLightField();
-								list_RemoveNode(my->mynode);
-							}
-							else
-							{
-								spawnExplosion(my->x, my->y, my->z);
-							}
-							return;
-						}
-						else if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
-						{
-							real_t fireMultiplier = 1.0;
-							//if ( hitstats->helmet && hitstats->helmet->type == HAT_WARM )
-							//{
-							//	if ( !(hit.entity->behavior == &actPlayer && hit.entity->effectShapeshift != NOTHING) )
-							//	{
-							//		if ( hitstats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(hitstats) )
-							//		{
-							//			fireMultiplier += 0.5;
-							//		}
-							//		else
-							//		{
-							//			fireMultiplier += 0.5 + 0.5 * abs(hitstats->helmet->beatitude); // cursed, extra fire damage
-							//		}
-							//	}
-							//}
-
 							//playSoundEntity(my, 153, 64);
 							playSoundEntity(hit.entity, 28, 128);
 							//TODO: Apply fire resistances/weaknesses.
@@ -1812,7 +1629,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										Stat* playerStats = parent->getStats();
 										if ( playerStats )
 										{
-											int skillLVL = playerStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+											int skillLVL = playerStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 											damage = (14 + skillLVL * 1.5);
 										}
 									}
@@ -1842,7 +1659,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 								}
 							}
 							int oldHP = hitstats->HP;
-							damage *= fireMultiplier;
 							damage /= (1 + (int)resistance);
 							hit.entity->modHP(-damage);
 							//for (i = 0; i < damage; i += 2) { //Spawn a gib for every two points of damage.
@@ -1911,7 +1727,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										steamAchievementClient(parent->skill[2], "BARONY_ACH_TIME_TO_PLAN");
 									}
 									parent->awardXP( hit.entity, true, true );
-									spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+									spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 								}
 								else
 								{
@@ -1995,61 +1811,40 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							int damage = element->damage;
 							damage += (spellbookDamageBonus * damage);
 							damage /= (1 + (int)resistance);
-							int oldHP = hit.entity->furnitureHealth;
 							hit.entity->furnitureHealth -= damage;
 							if ( parent )
 							{
 								if ( parent->behavior == &actPlayer )
 								{
-									bool destroyed = oldHP > 0 && hit.entity->furnitureHealth <= 0;
-									if ( destroyed )
-									{
-										gameModeManager.currentSession.challengeRun.updateKillEvent(hit.entity);
-									}
 									switch ( hit.entity->furnitureType )
 									{
-									case FURNITURE_CHAIR:
-										if ( destroyed )
-										{
+										case FURNITURE_CHAIR:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_TABLE:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_TABLE:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BUNKBED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BUNKBED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_PODIUM:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_PODIUM:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									default:
-										break;
+											updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										default:
+											break;
 									}
 								}
 							}
@@ -2076,25 +1871,14 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if (hit.entity)
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
+							playSoundEntity(hit.entity, 174, 64);
 							int duration = (element->duration * (((element->mana) / static_cast<double>(element->base_mana)) * element->overload_multiplier));
 							duration /= (1 + (int)resistance);
 
-							if ( parent && (parent->behavior == &actMagicTrap || parent->behavior == &actMagicTrapCeiling) )
+							if ( hit.entity->setEffect(EFF_CONFUSED, true, duration, false) )
 							{
-								if ( trapResist > 0 )
-								{
-									if ( local_rng.rand() % 100 < trapResist )
-									{
-										duration = 0;
-									}
-								}
-							}
-
-							if ( duration > 0 && hit.entity->setEffect(EFF_CONFUSED, true, duration, false) )
-							{
-								playSoundEntity(hit.entity, 174, 64);
 								if ( hit.entity->behavior == &actMonster )
 								{
 									hit.entity->monsterTarget = 0; // monsters forget what they're doing
@@ -2133,39 +1917,17 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					playSoundEntity(my, 197, 128);
 					if (hit.entity)
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
-							real_t coldMultiplier = 1.0;
-							bool warmHat = false;
-							if ( hitstats->helmet && hitstats->helmet->type == HAT_WARM )
-							{
-								if ( !(hit.entity->behavior == &actPlayer && hit.entity->effectShapeshift != NOTHING) )
-								{
-									if ( hitstats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(hitstats) )
-									{
-										coldMultiplier = std::max(0.0, 0.5 - 0.25 * (abs(hitstats->helmet->beatitude)));
-									}
-									else
-									{
-										coldMultiplier = 0.50;
-									}
-									warmHat = true;
-								}
-							}
-
 							playSoundEntity(hit.entity, 28, 128);
+							hitstats->EFFECTS[EFF_SLOW] = true;
+							hitstats->EFFECTS_TIMERS[EFF_SLOW] = (element->duration * (((element->mana) / static_cast<double>(element->base_mana)) * element->overload_multiplier));
+							hitstats->EFFECTS_TIMERS[EFF_SLOW] /= (1 + (int)resistance);
 
-							if ( !warmHat )
+							// If the Entity hit is a Player, update their status to be Slowed
+							if ( hit.entity->behavior == &actPlayer )
 							{
-								hitstats->EFFECTS[EFF_SLOW] = true;
-								hitstats->EFFECTS_TIMERS[EFF_SLOW] = (element->duration * (((element->mana) / static_cast<double>(element->base_mana)) * element->overload_multiplier));
-								hitstats->EFFECTS_TIMERS[EFF_SLOW] /= (1 + (int)resistance);
-
-								// If the Entity hit is a Player, update their status to be Slowed
-								if ( hit.entity->behavior == &actPlayer )
-								{
-									serverUpdateEffects(hit.entity->skill[2]);
-								}
+								serverUpdateEffects(hit.entity->skill[2]);
 							}
 
 							int damage = element->damage;
@@ -2184,7 +1946,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										Stat* playerStats = parent->getStats();
 										if ( playerStats )
 										{
-											int skillLVL = playerStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+											int skillLVL = playerStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 											damage = (18 + skillLVL * 1.5);
 										}
 									}
@@ -2207,15 +1969,10 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							//damage += ((element->mana - element->base_mana) / static_cast<double>(element->overload_multiplier)) * element->damage;
 							int oldHP = hitstats->HP;
 							damage *= damageMultiplier;
-							damage *= coldMultiplier;
 							damage /= (1 + (int)resistance);
-
-							if ( damage > 0 )
-							{
-								hit.entity->modHP(-damage);
-								Entity* gib = spawnGib(hit.entity);
-								serverSpawnGibForClient(gib);
-							}
+							hit.entity->modHP(-damage);
+							Entity* gib = spawnGib(hit.entity);
+							serverSpawnGibForClient(gib);
 
 							// write the obituary
 							if ( parent )
@@ -2268,7 +2025,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									{
 										steamAchievementClient(parent->skill[2], "BARONY_ACH_TIME_TO_PLAN");
 									}
-									spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+									spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 								}
 								else
 								{
@@ -2285,7 +2042,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if (hit.entity)
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
 							playSoundEntity(hit.entity, 396 + local_rng.rand() % 3, 64);
 							hitstats->EFFECTS[EFF_SLOW] = true;
@@ -2320,8 +2077,9 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if (hit.entity)
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
+							playSoundEntity(hit.entity, 174, 64);
 							int effectDuration = 0;
 							if ( parent && parent->behavior == &actMagicTrapCeiling )
 							{
@@ -2351,22 +2109,12 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										//messagePlayer(0, "Target already asleep!");
 									}
 								}
-
-								int trapResist = hit.entity->getFollowerBonusTrapResist();
-								if ( trapResist > 0 )
-								{
-									if ( local_rng.rand() % 100 < trapResist )
-									{
-										magicTrapReapplySleep = false;
-									}
-								}
 							}
 
 							if ( magicTrapReapplySleep )
 							{
 								if ( hit.entity->setEffect(EFF_ASLEEP, true, effectDuration, false) )
 								{
-									playSoundEntity(hit.entity, 174, 64);
 									hitstats->OLDHP = hitstats->HP;
 									if ( hit.entity->behavior == &actPlayer )
 									{
@@ -2404,25 +2152,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					playSoundEntity(my, 173, 128);
 					if (hit.entity)
 					{
-						if ( mimic )
-						{
-							int damage = element->damage;
-							damage += (spellbookDamageBonus * damage);
-							damage /= (1 + (int)resistance);
-							hit.entity->chestHandleDamageMagic(damage, *my, parent);
-							if ( my->actmagicProjectileArc > 0 )
-							{
-								Entity* caster = uidToEntity(spell->caster);
-								spawnMagicTower(caster, my->x, my->y, spell->ID, nullptr);
-							}
-							if ( !(my->actmagicIsOrbiting == 2) )
-							{
-								my->removeLightField();
-								list_RemoveNode(my->mynode);
-							}
-							return;
-						}
-						else if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
+						if (hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer)
 						{
 							Entity* parent = uidToEntity(my->parent);
 							playSoundEntity(my, 173, 64);
@@ -2442,7 +2172,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										Stat* playerStats = parent->getStats();
 										if ( playerStats )
 										{
-											int skillLVL = playerStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+											int skillLVL = playerStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 											damage = (22 + skillLVL * 1.5);
 										}
 									}
@@ -2499,7 +2229,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									}
 									steamStatisticUpdateClient(parent->skill[2], STEAM_STAT_BOMBARDIER, STEAM_STAT_INT, 1);
 								}
-								spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+								spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 							}
 						}
 						else if ( hit.entity->behavior == &actDoor )
@@ -2565,61 +2295,40 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 							int damage = element->damage;
 							damage += (spellbookDamageBonus * damage);
 							damage /= (1 + (int)resistance);
-							int oldHP = hit.entity->furnitureHealth;
 							hit.entity->furnitureHealth -= damage;
 							if ( parent )
 							{
 								if ( parent->behavior == &actPlayer )
 								{
-									bool destroyed = oldHP > 0 && hit.entity->furnitureHealth <= 0;
-									if ( destroyed )
-									{
-										gameModeManager.currentSession.challengeRun.updateKillEvent(hit.entity);
-									}
 									switch ( hit.entity->furnitureType )
 									{
-									case FURNITURE_CHAIR:
-										if ( destroyed )
-										{
+										case FURNITURE_CHAIR:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_TABLE:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_TABLE:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_BUNKBED:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_BUNKBED:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									case FURNITURE_PODIUM:
-										if ( destroyed )
-										{
+											updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										case FURNITURE_PODIUM:
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
-										}
-										updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
-											false, DamageGib::DMG_DEFAULT);
-										break;
-									default:
-										break;
+											updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
+												false, DamageGib::DMG_DEFAULT);
+											break;
+										default:
+											break;
 									}
 								}
 							}
@@ -2636,7 +2345,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if ( hit.entity )
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) )
+						if ( hit.entity->behavior == &actMonster )
 						{
 							Entity* parent = uidToEntity(my->parent);
 							real_t pushbackMultiplier = 0.6;// +(0.2 * spellbookDamageBonus);
@@ -2763,46 +2472,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 										if ( parent->behavior == &actPlayer )
 										{
 											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(400));
-										}
-									}
-								}
-							}
-						}
-						else if ( hit.entity->behavior == &actMonster && hit.entity->getMonsterTypeFromSprite() == MIMIC )
-						{
-							//Lock chest
-							playSoundEntity(hit.entity, 92, 64);
-
-							if ( hitstats )
-							{
-								//if ( MFLAG_DISABLEOPENING )
-								//{
-								//	if ( parent && parent->behavior == &actPlayer )
-								//	{
-								//		Uint32 color = makeColorRGB(255, 0, 255);
-								//		messagePlayerColor(parent->skill[2], MESSAGE_COMBAT, 0xFFFFFFFF, Language::get(3096), Language::get(3099));
-								//		messagePlayerColor(parent->skill[2], MESSAGE_COMBAT, color, Language::get(3100)); // disabled locking spell.
-								//	}
-								//}
-								//else
-								{
-									if ( parent && parent->behavior == &actPlayer )
-									{
-										if ( mimic )
-										{
-											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(400));
-										}
-										else
-										{
-											messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(6083));
-										}
-									}
-									if ( !hitstats->EFFECTS[EFF_MIMIC_LOCKED] )
-									{
-										if ( hit.entity->setEffect(EFF_MIMIC_LOCKED, true, TICKS_PER_SECOND * 5, false) )
-										{
-											hit.entity->monsterHitTime = HITRATE - 2;
-											hitstats->monsterMimicLockedBy = parent ? parent->getUID() : 0;
 										}
 									}
 								}
@@ -2955,51 +2624,6 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 								}
 							}
 						}
-						else if ( hit.entity->behavior == &actMonster && hit.entity->getMonsterTypeFromSprite() == MIMIC )
-						{
-							if ( hit.entity->isInertMimic() )
-							{
-								if ( hitstats->EFFECTS[EFF_MIMIC_LOCKED] )
-								{
-									hit.entity->setEffect(EFF_MIMIC_LOCKED, false, 0, false);
-								}
-								if ( hit.entity->disturbMimic(parent, false, true) )
-								{
-									if ( parent )
-									{
-										if ( parent->behavior == &actPlayer )
-										{
-											messagePlayer(parent->skill[2], MESSAGE_INTERACTION, Language::get(6081));
-										}
-									}
-								}
-							}
-							else
-							{
-								if ( hitstats )
-								{
-									//if ( MFLAG_DISABLEOPENING )
-									//{
-									//	if ( parent && parent->behavior == &actPlayer )
-									//	{
-									//		Uint32 color = makeColorRGB(255, 0, 255);
-									//		messagePlayerColor(parent->skill[2], MESSAGE_COMBAT, 0xFFFFFFFF, Language::get(3096), Language::get(3099));
-									//		messagePlayerColor(parent->skill[2], MESSAGE_COMBAT, color, Language::get(3100)); // disabled locking spell.
-									//	}
-									//}
-									//else
-									{
-										if ( hitstats->EFFECTS[EFF_MIMIC_LOCKED] )
-										{
-											if ( hit.entity->setEffect(EFF_MIMIC_LOCKED, false, 0, false) )
-											{
-												hit.entity->monsterHitTime = std::max(hit.entity->monsterHitTime, HITRATE / 2);
-											}
-										}
-									}
-								}
-							}
-						}
 						else
 						{
 							if ( parent )
@@ -3065,7 +2689,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 				{
 					if ( hit.entity )
 					{
-						if ( (!mimic && hit.entity->behavior == &actMonster) || hit.entity->behavior == &actPlayer )
+						if ( hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer )
 						{
 							int effectDuration = (element->duration * (((element->mana) / static_cast<double>(element->base_mana)) * element->overload_multiplier));
 							effectDuration /= (1 + (int)resistance);
@@ -3117,7 +2741,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 					playSoundEntity(my, 173, 128);
 					if ( hit.entity )
 					{
-						if ( (hit.entity->behavior == &actMonster && !mimic) || hit.entity->behavior == &actPlayer )
+						if ( hit.entity->behavior == &actMonster || hit.entity->behavior == &actPlayer )
 						{
 							Entity* parent = uidToEntity(my->parent);
 							playSoundEntity(my, 173, 64);
@@ -3275,7 +2899,7 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									}
 									return;
 								}
-								else if ( hit.entity->behavior == &actChest || mimic )
+								else if ( hit.entity->behavior == &actChest )
 								{
 									int damage = element->damage;
 									damage += (spellbookDamageBonus * damage);
@@ -3298,56 +2922,35 @@ void actMagicMissile(Entity* my)   //TODO: Verify this function.
 									int damage = element->damage;
 									damage += (spellbookDamageBonus * damage);
 									damage /= (1 + (int)resistance);
-									int oldHP = hit.entity->furnitureHealth;
 									hit.entity->furnitureHealth -= damage;
 									if ( parent )
 									{
 										if ( parent->behavior == &actPlayer )
 										{
-											bool destroyed = oldHP > 0 && hit.entity->furnitureHealth <= 0;
-											if ( destroyed )
-											{
-												gameModeManager.currentSession.challengeRun.updateKillEvent(hit.entity);
-											}
 											switch ( hit.entity->furnitureType )
 											{
 											case FURNITURE_CHAIR:
-												if ( destroyed )
-												{
-													messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
-												}
+												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(388));
 												updateEnemyBar(parent, hit.entity, Language::get(677), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 													false, DamageGib::DMG_DEFAULT);
 												break;
 											case FURNITURE_TABLE:
-												if ( destroyed )
-												{
-													messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
-												}
+												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(389));
 												updateEnemyBar(parent, hit.entity, Language::get(676), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 													false, DamageGib::DMG_DEFAULT);
 												break;
 											case FURNITURE_BED:
-												if ( destroyed )
-												{
-													messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
-												}
+												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2505));
 												updateEnemyBar(parent, hit.entity, Language::get(2505), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 													false, DamageGib::DMG_DEFAULT);
 												break;
 											case FURNITURE_BUNKBED:
-												if ( destroyed )
-												{
-													messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
-												}
+												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2506));
 												updateEnemyBar(parent, hit.entity, Language::get(2506), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 													false, DamageGib::DMG_DEFAULT);
 												break;
 											case FURNITURE_PODIUM:
-												if ( destroyed )
-												{
-													messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
-												}
+												messagePlayer(parent->skill[2], MESSAGE_COMBAT, Language::get(2508), Language::get(2507));
 												updateEnemyBar(parent, hit.entity, Language::get(2507), hit.entity->furnitureHealth, hit.entity->furnitureMaxHealth,
 													false, DamageGib::DMG_DEFAULT);
 												break;
@@ -5599,7 +5202,7 @@ void actParticleSapCenter(Entity* my)
 							monster->setEffect(EFF_STUNNED, true, 20, false);
 							bool spawnSecondAlly = false;
 							
-							if ( (caster->getINT() + stats[caster->skill[2]]->getModifiedProficiency(PRO_MAGIC)) >= SKILL_LEVEL_EXPERT )
+							if ( (caster->getINT() + stats[caster->skill[2]]->PROFICIENCIES[PRO_MAGIC]) >= SKILL_LEVEL_EXPERT )
 							{
 								spawnSecondAlly = true;
 							}
@@ -6013,7 +5616,6 @@ bool Entity::magicOrbitingCollision()
 				&& entity->behavior != &actPlayer
 				&& entity->behavior != &actDoor
 				&& !(entity->isDamageableCollider() && entity->isColliderDamageableByMagic())
-				&& !entity->isInertMimic()
 				&& entity->behavior != &::actChest 
 				&& entity->behavior != &::actFurniture )
 			{
@@ -6860,9 +6462,6 @@ bool magicDig(Entity* parent, Entity* projectile, int numRocks, int randRocks)
 
 		boulderLavaOrArcaneOnDestroy(hit.entity, hit.entity->sprite, nullptr);
 
-		auto& rng = hit.entity->entity_rng ? *hit.entity->entity_rng : local_rng;
-		Uint32 monsterSpawnSeed = rng.getU32();
-
 		// destroy the boulder
 		playSoundEntity(hit.entity, 67, 128);
 		list_RemoveNode(hit.entity->mynode);
@@ -6888,8 +6487,8 @@ bool magicDig(Entity* parent, Entity* projectile, int numRocks, int randRocks)
 			}
 			if ( monster )
 			{
-				monster->seedEntityRNG(monsterSpawnSeed);
-				for ( int c = 0; c < MAXPLAYERS; c++ )
+				int c;
+				for ( c = 0; c < MAXPLAYERS; c++ )
 				{
 					Uint32 color = makeColorRGB(255, 128, 0);
 					messagePlayerColor(c, MESSAGE_HINT, color, Language::get(406));

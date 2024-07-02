@@ -219,11 +219,7 @@ void actArrow(Entity* my)
 
 	if ( multiplayer != CLIENT )
 	{
-		Sint32 val = (1 << 31);
-		val |= (Uint8)(17);
-		val |= (((Uint16)(my->arrowShotByWeapon) & 0xFFF) << 8);
-		val |= (my->arrowDropOffEquipmentModifier + 8) << 20;
-		my->skill[2] = val;//-(1000 + my->arrowShotByWeapon); // invokes actArrow for clients.
+		my->skill[2] = -(1000 + my->arrowShotByWeapon); // invokes actArrow for clients.
 		my->flags[INVISIBLE] = false;
 	}
 
@@ -401,33 +397,7 @@ void actArrow(Entity* my)
 				Entity* parent = uidToEntity(my->parent);
 				Stat* hitstats = hit.entity->getStats();
 				playSoundEntity(my, 72 + local_rng.rand() % 3, 64);
-				if ( hit.entity->behavior == &actChest || hit.entity->isInertMimic() )
-				{
-					playSoundEntity(hit.entity, 66, 64); //*tink*
-
-					if ( parent )
-					{
-						if ( parent->behavior == &actPlayer )
-						{
-							messagePlayer(parent->skill[2], MESSAGE_COMBAT_BASIC, Language::get(667));
-							messagePlayer(parent->skill[2], MESSAGE_COMBAT_BASIC, Language::get(447));
-						}
-						if ( hit.entity->behavior == &actMonster )
-						{
-							if ( hitstats )
-							{
-								updateEnemyBar(parent, hit.entity, Language::get(675), hitstats->HP, hitstats->MAXHP,
-									false, DamageGib::DMG_WEAKEST);
-							}
-						}
-						else
-						{
-							updateEnemyBar(parent, hit.entity, Language::get(675), hit.entity->chestHealth, hit.entity->chestMaxHealth,
-								false, DamageGib::DMG_WEAKEST);
-						}
-					}
-				}
-				else if ( hitstats != NULL && hit.entity != parent )
+				if ( hitstats != NULL && hit.entity != parent )
 				{
 					if ( !(svFlags & SV_FLAG_FRIENDLYFIRE) )
 					{
@@ -522,68 +492,6 @@ void actArrow(Entity* my)
 					real_t targetACEffectiveness = Entity::getACEffectiveness(hit.entity, hitstats, hit.entity->behavior == &actPlayer, parent, parent ? parent->getStats() : nullptr);
 					int attackAfterReductions = static_cast<int>(std::max(0.0, ((my->arrowPower * targetACEffectiveness - enemyAC))) + (1.0 - targetACEffectiveness) * my->arrowPower);
 					int damage = attackAfterReductions;
-
-					bool backstab = false;
-					bool flanking = false;
-					if ( parent && parent->getStats() )
-					{
-						Stat* parentStats = parent->getStats();
-						if ( parentStats->helmet && parentStats->helmet->type == HAT_HOOD_WHISPERS 
-							&& !monsterIsImmobileTurret(hit.entity, hitstats) && !(hitstats->type == MIMIC) )
-						{
-							real_t hitAngle = hit.entity->yawDifferenceFromEntity(my);
-							if ( (hitAngle >= 0 && hitAngle <= 2 * PI / 3) ) // 120 degree arc
-							{
-								int stealthCapstoneBonus = 1;
-								if ( parent->skillCapstoneUnlockedEntity(PRO_STEALTH) )
-								{
-									stealthCapstoneBonus = 2;
-								}
-
-								real_t equipmentModifier = 0.0;
-								real_t bonusModifier = 1.0;
-								if ( parentStats->helmet && parentStats->helmet->type == HAT_HOOD_WHISPERS )
-								{
-									if ( parentStats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(parentStats) )
-									{
-										equipmentModifier += (std::min(50 + (10 * abs(parentStats->helmet->beatitude)), 100)) / 100.0;
-									}
-									else
-									{
-										equipmentModifier = 0.5;
-										bonusModifier = 0.5;
-									}
-								}
-
-								if ( hit.entity->monsterState == MONSTER_STATE_WAIT
-									|| hit.entity->monsterState == MONSTER_STATE_PATH
-									|| (hit.entity->monsterState == MONSTER_STATE_HUNT && uidToEntity(hit.entity->monsterTarget) == nullptr) )
-								{
-									// unaware monster, get backstab damage.
-									int bonus = (parentStats->getModifiedProficiency(PRO_STEALTH) / 20 + 2) * (2 * stealthCapstoneBonus);
-									damage += ((bonus * equipmentModifier) * bonusModifier);
-									if ( local_rng.rand() % 10 == 0 && hit.entity->behavior != &actPlayer )
-									{
-										parent->increaseSkill(PRO_STEALTH);
-									}
-									backstab = true;
-								}
-								else if ( local_rng.rand() % 2 == 0 )
-								{
-									// monster currently engaged in some form of combat maneuver
-									// 1 in 2 chance to flank defenses.
-									int bonus = (parentStats->getModifiedProficiency(PRO_STEALTH) / 20 + 1) * (stealthCapstoneBonus);
-									damage += ((bonus * equipmentModifier) * bonusModifier);
-									if ( local_rng.rand() % 20 == 0 && hit.entity->behavior != &actPlayer )
-									{
-										parent->increaseSkill(PRO_STEALTH);
-									}
-									flanking = true;
-								}
-							}
-						}
-					}
-
 					damage = std::max(0, damage);
 
 					if ( silverDamage || huntingDamage )
@@ -631,21 +539,6 @@ void actArrow(Entity* my)
 					{
 						damage *= damageMultiplier;
 					}
-
-					int trapResist = 0;
-					if ( parent )
-					{
-						if ( parent->behavior == &actArrowTrap )
-						{
-							trapResist = hit.entity->getFollowerBonusTrapResist();
-							if ( trapResist != 0 )
-							{
-								real_t mult = std::max(0.0, 1.0 - (trapResist / 100.0));
-								damage *= mult;
-							}
-						}
-					}
-
 					/*messagePlayer(0, "My damage: %d, AC: %d, Pierce: %d", my->arrowPower, AC(hitstats), my->arrowArmorPierce);
 					messagePlayer(0, "Resolved to %d damage.", damage);*/
 					hit.entity->modHP(-damage);
@@ -723,7 +616,7 @@ void actArrow(Entity* my)
 						if ( doSkillIncrease && (local_rng.rand() % chance == 0) && parent && parent->getStats() )
 						{
 							if ( hitstats->type != DUMMYBOT 
-								|| (hitstats->type == DUMMYBOT && parent->getStats()->getProficiency(PRO_RANGED) < SKILL_LEVEL_BASIC) )
+								|| (hitstats->type == DUMMYBOT && parent->getStats()->PROFICIENCIES[PRO_RANGED] < SKILL_LEVEL_BASIC) )
 							{
 								parent->increaseSkill(PRO_RANGED);
 							}
@@ -758,7 +651,7 @@ void actArrow(Entity* my)
 					if ( hitstats->HP <= 0 && parent)
 					{
 						parent->awardXP( hit.entity, true, true );
-						spawnBloodVialOnMonsterDeath(hit.entity, hitstats, parent);
+						spawnBloodVialOnMonsterDeath(hit.entity, hitstats);
 					}
 
 					// alert the monster
@@ -808,11 +701,7 @@ void actArrow(Entity* my)
 								// smites the %s!
 								messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(3743), Language::get(3744), MSG_COMBAT);
 							}
-							else if ( backstab && hitstats->HP > 0 )
-							{
-								messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(6104), Language::get(6105), MSG_COMBAT);
-							}
-							else if ( damage <= (nominalDamage * .7) && hitstats->HP > 0 )
+							else if ( damage <= (nominalDamage * .7) )
 							{
 								// weak shot.
 								messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(3733), Language::get(3734), MSG_COMBAT);
@@ -883,15 +772,7 @@ void actArrow(Entity* my)
 					bool statusEffectApplied = false;
 					if ( hitstats->HP > 0 )
 					{
-						bool procEffect = true;
-						if ( trapResist > 0 )
-						{
-							if ( local_rng.rand() % 100 < trapResist )
-							{
-								procEffect = false;
-							}
-						}
-						if ( my->arrowQuiverType == QUIVER_FIRE && procEffect )
+						if ( my->arrowQuiverType == QUIVER_FIRE )
 						{
 							bool burning = hit.entity->flags[BURNING];
 							hit.entity->SetEntityOnFire(my);
@@ -921,7 +802,7 @@ void actArrow(Entity* my)
 								statusEffectApplied = true;
 							}
 						}
-						else if ( my->arrowQuiverType == QUIVER_KNOCKBACK && procEffect && hit.entity->setEffect(EFF_KNOCKBACK, true, 30, false) )
+						else if ( my->arrowQuiverType == QUIVER_KNOCKBACK && hit.entity->setEffect(EFF_KNOCKBACK, true, 30, false) )
 						{
 							real_t pushbackMultiplier = 0.6;
 							if ( !hit.entity->isMobile() )
@@ -1002,7 +883,7 @@ void actArrow(Entity* my)
 							statusEffectApplied = true;
 						}
 						else if ( my->arrowQuiverType == QUIVER_HUNTING && !(hitstats->amulet && hitstats->amulet->type == AMULET_POISONRESISTANCE)
-							&& !(hitstats->type == INSECTOID) && procEffect )
+							&& !(hitstats->type == INSECTOID) )
 						{
 							if ( !hitstats->EFFECTS[EFF_POISONED] )
 							{
@@ -1033,13 +914,15 @@ void actArrow(Entity* my)
 								}
 								if ( hit.entity->behavior == &actPlayer )
 								{
-									if ( local_rng.rand() % 8 == 0 && hit.entity->char_gonnavomit == 0 && !hitstats->EFFECTS[EFF_VOMITING] )
+									if ( local_rng.rand() % 8 == 0 && hit.entity->skill[26] == 0 && !hitstats->EFFECTS[EFF_VOMITING] )
 									{
 										// maybe vomit
 										messagePlayer(hit.entity->skill[2], MESSAGE_STATUS, Language::get(634));
-										if ( hit.entity->entityCanVomit() )
+										if ( hitstats->type != SKELETON
+											&& hit.entity->effectShapeshift == NOTHING
+											&& hitstats->type != AUTOMATON )
 										{
-											hit.entity->char_gonnavomit = 140 + local_rng.rand() % 60;
+											hit.entity->skill[26] = 140 + local_rng.rand() % 60; 
 										}
 									}
 									Uint32 color = makeColorRGB(255, 0, 0);
@@ -1059,14 +942,7 @@ void actArrow(Entity* my)
 						if ( parent && parent->behavior == &actPlayer )
 						{
 							Uint32 color = makeColorRGB(0, 255, 0);
-							if ( backstab )
-							{
-								messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(2547), Language::get(2548), MSG_COMBAT);
-							}
-							else
-							{
-								messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(692), Language::get(697), MSG_COMBAT);
-							}
+							messagePlayerMonsterEvent(parent->skill[2], color, *hitstats, Language::get(692), Language::get(697), MSG_COMBAT);
 						}
 					}
 

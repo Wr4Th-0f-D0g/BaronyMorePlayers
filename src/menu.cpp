@@ -361,7 +361,7 @@ void changeSettingsTab(int option)
 	}
 }
 
-bool isAchievementUnlockedForClassUnlock(int race)
+bool isAchievementUnlockedForClassUnlock(PlayerRaces race)
 {
 #ifdef STEAMWORKS
 	bool unlocked = false;
@@ -438,22 +438,6 @@ bool isAchievementUnlockedForClassUnlock(int race)
 
 int isCharacterValidFromDLC(Stat& myStats, int characterClass)
 {
-	bool challengeClass = false;
-	bool challengeRace = false;
-	if ( gameModeManager.currentSession.challengeRun.isActive() )
-	{
-		if ( gameModeManager.currentSession.challengeRun.classnum >= 0
-			&& gameModeManager.currentSession.challengeRun.classnum < NUMCLASSES )
-		{
-			challengeClass = (characterClass == gameModeManager.currentSession.challengeRun.classnum);
-		}
-		if ( gameModeManager.currentSession.challengeRun.race >= 0
-			&& gameModeManager.currentSession.challengeRun.race <= RACE_INSECTOID )
-		{
-			challengeRace = (myStats.playerRace == gameModeManager.currentSession.challengeRun.race);
-		}
-	}
-
 	switch ( characterClass )
 	{
 		case CLASS_CONJURER:
@@ -462,10 +446,7 @@ int isCharacterValidFromDLC(Stat& myStats, int characterClass)
 		case CLASS_BREWER:
 			if ( !enabledDLCPack1 )
 			{
-				if ( !challengeClass )
-				{
-					return INVALID_REQUIREDLC1;
-				}
+				return INVALID_REQUIREDLC1;
 			}
 			break;
 		case CLASS_MACHINIST:
@@ -474,10 +455,7 @@ int isCharacterValidFromDLC(Stat& myStats, int characterClass)
 		case CLASS_HUNTER:
 			if ( !enabledDLCPack2 )
 			{
-				if ( !challengeClass )
-				{
-					return INVALID_REQUIREDLC2;
-				}
+				return INVALID_REQUIREDLC2;
 			}
 			break;
 		default:
@@ -492,10 +470,7 @@ int isCharacterValidFromDLC(Stat& myStats, int characterClass)
 		case RACE_GOATMAN:
 			if ( !enabledDLCPack1 )
 			{
-				if ( !challengeRace )
-				{
-					return INVALID_REQUIREDLC1;
-				}
+				return INVALID_REQUIREDLC1;
 			}
 			break;
 		case RACE_AUTOMATON:
@@ -504,10 +479,7 @@ int isCharacterValidFromDLC(Stat& myStats, int characterClass)
 		case RACE_INSECTOID:
 			if ( !enabledDLCPack2 )
 			{
-				if ( !challengeRace )
-				{
-					return INVALID_REQUIREDLC2;
-				}
+				return INVALID_REQUIREDLC2;
 			}
 			break;
 		default:
@@ -8464,8 +8436,7 @@ void doNewGame(bool makeHighscore) {
         Input::inputs[i].refresh();
     }
 
-	bool localScores = gameModeManager.allowsHiscores();
-	bool onlineScores = gameModeManager.allowsGlobalHiscores();
+	if ( gameModeManager.allowsHiscores() )
 	{
 		if ( makeHighscore )
 		{
@@ -8473,31 +8444,19 @@ void doNewGame(bool makeHighscore) {
             if (splitscreen) {
                 for (int c = 0; c < MAXPLAYERS; ++c) {
                     if (!client_disconnected[c]) {
-						if ( localScores )
-						{
-							saveScore(c);
-						}
+                        saveScore(c);
 #ifdef USE_PLAYFAB
 						if ( c == 0 )
 						{
-							if ( onlineScores )
-							{
-								playfabUser.postScore(c);
-							}
+							playfabUser.postScore(c);
 						}
 #endif
                     }
                 }
             } else {
-				if ( localScores )
-				{
-					saveScore(clientnum);
-				}
+                saveScore(clientnum);
 #ifdef USE_PLAYFAB
-				if ( onlineScores )
-				{
-					playfabUser.postScore(clientnum);
-				}
+				playfabUser.postScore(clientnum);
 #endif
             }
             saveAllScores(SCORESFILE);
@@ -8511,7 +8470,6 @@ void doNewGame(bool makeHighscore) {
 		{
 			deleteSaveGame(multiplayer);
 			loadingsavegame = 0;
-			loadinglobbykey = 0;
 		}
 	}
 	camera_charsheet_offsetyaw = (330) * PI / 180; // reset player camera view.
@@ -8557,17 +8515,6 @@ void doNewGame(bool makeHighscore) {
 		conductGameChallenges[CONDUCT_CHEATS_ENABLED] = 1;
 	}
 
-	std::string challengeRunCustomStartLevel = "";
-	bool quickStartPortal = (gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN || gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT) && !loadingsavegame;
-	if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_SHOPPING_SPREE) )
-	{
-		if ( currentlevel == 0 && !loadingsavegame )
-		{
-			challengeRunCustomStartLevel = "minetown";
-			secretlevel = true;
-		}
-	}
-
 	if ( Mods::numCurrentModsLoaded <= 0 )
 	{
 		Mods::disableSteamAchievements = false;
@@ -8587,21 +8534,13 @@ void doNewGame(bool makeHighscore) {
 	{
 		if ( bWasOnMainMenu )
 		{
-			if ( !(gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-				|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN) )
-			{
-				gameModeManager.currentSession.saveServerFlags();
-			}
+			gameModeManager.currentSession.saveServerFlags();
 		}
 		svFlags = lobbyWindowSvFlags;
 	}
 	else if ( !loadingsavegame && bWasOnMainMenu )
 	{
-		if ( !(gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT
-			|| gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN) )
-		{
-			gameModeManager.currentSession.saveServerFlags();
-		}
+		gameModeManager.currentSession.saveServerFlags();
 	}
 
 	if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_TUTORIAL )
@@ -8712,11 +8651,6 @@ void doNewGame(bool makeHighscore) {
 		saveGameInfo = getSaveGameInfo(multiplayer == SINGLE);
 	}
 
-	// generate mimics
-	{
-		mimic_generator.init();
-	}
-
 	// load dungeon
 	if ( multiplayer != CLIENT )
 	{
@@ -8756,10 +8690,6 @@ void doNewGame(bool makeHighscore) {
         if ( !loadingsavegame )
         {
 			mapseed = 0;
-			if ( challengeRunCustomStartLevel != "" )
-			{
-				mapseed = uniqueGameKey;
-			}
 		}
 
 		// reset class loadout
@@ -8776,14 +8706,6 @@ void doNewGame(bool makeHighscore) {
 			{
 				// restore flags as we saved them in the lobby before this game started
 				gameModeManager.currentSession.serverFlags = oldSvFlags;
-			}
-			if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_SHOPPING_SPREE) )
-			{
-				if ( currentlevel == 0 )
-				{
-					challengeRunCustomStartLevel = "minetown";
-					secretlevel = true;
-				}
 			}
 		} else {
 			for (int c = 0; c < MAXPLAYERS; ++c) {
@@ -8828,34 +8750,11 @@ void doNewGame(bool makeHighscore) {
 		int checkMapHash = -1;
 		if ( loadingmap == false )
 		{
-			if ( challengeRunCustomStartLevel != "" )
+			physfsLoadMapFile(currentlevel, mapseed, false, &checkMapHash);
+			if (!verifyMapHash(map.filename, checkMapHash))
 			{
-				std::string fullMapName = physfsFormatMapName(challengeRunCustomStartLevel.c_str());
-				loadMap(fullMapName.c_str(), &map, map.entities, map.creatures, &checkMapHash);
-				if ( !verifyMapHash(fullMapName.c_str(), checkMapHash) )
-				{
-					conductGameChallenges[CONDUCT_MODDED] = 1;
-				}
-			}
-			else
-			{
-				physfsLoadMapFile(currentlevel, mapseed, false, &checkMapHash);
-				if (!verifyMapHash(map.filename, checkMapHash))
-				{
-					conductGameChallenges[CONDUCT_MODDED] = 1;
-					Mods::disableSteamAchievements = true;
-				}
-
-				if ( quickStartPortal && !strcmp(map.name, "Start Map") && currentlevel == 0 )
-				{
-					Entity* portal = newEntity(118, 0, map.entities, map.creatures);
-					setSpriteAttributes(portal, nullptr, nullptr);
-					portal->x = 6 * 16;
-					portal->y = 13 * 16;
-					portal->teleporterX = 6;
-					portal->teleporterY = 25;
-					portal->teleporterType = 2;
-				}
+				conductGameChallenges[CONDUCT_MODDED] = 1;
+				Mods::disableSteamAchievements = true;
 			}
 		}
 		else
@@ -8876,34 +8775,6 @@ void doNewGame(bool makeHighscore) {
 			}
 		}
 		assignActions(&map);
-
-		if ( !loadingsavegame && challengeRunCustomStartLevel == "minetown" )
-		{
-			std::vector<Entity*> shopkeepersToInsert;
-			for ( node_t* node = map.creatures->first; node; node = node->next )
-			{
-				Entity* entity = (Entity*)node->element;
-				if ( entity->sprite == 35 )
-				{
-					shopkeepersToInsert.push_back(entity);
-				}
-			}
-
-			for ( auto entity : shopkeepersToInsert )
-			{
-				if ( auto monster = summonMonsterNoSmoke(SHOPKEEPER, entity->x, entity->y, true) )
-				{
-					if ( entity->entity_rng )
-					{
-						BaronyRNG shop_rng;
-						Uint32 tmpSeed = entity->entity_rng->getU32();
-						shop_rng.seedBytes(&tmpSeed, sizeof(tmpSeed));
-						monster->seedEntityRNG(shop_rng.getU32());
-					}
-				}
-			}
-		}
-
 		generatePathMaps();
         clearChunks();
         createChunks();
@@ -9149,10 +9020,6 @@ void doNewGame(bool makeHighscore) {
 				initClass(c);
 			}
 			mapseed = 0;
-			if ( challengeRunCustomStartLevel != "" )
-			{
-				mapseed = uniqueGameKey;
-			}
 		}
 		else
 		{
@@ -9163,14 +9030,6 @@ void doNewGame(bool makeHighscore) {
 			{
 				// restore flags as we saved them in the lobby before this game started
 				gameModeManager.currentSession.serverFlags = oldSvFlags;
-			}
-			if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_SHOPPING_SPREE) )
-			{
-				if ( currentlevel == 0 )
-				{
-					challengeRunCustomStartLevel = "minetown";
-					secretlevel = true;
-				}
 			}
 		}
 
@@ -9220,34 +9079,11 @@ void doNewGame(bool makeHighscore) {
 		int checkMapHash = -1;
 		if ( loadingmap == false )
 		{
-			if ( challengeRunCustomStartLevel != "" )
+			physfsLoadMapFile(currentlevel, mapseed, false, &checkMapHash);
+			if (!verifyMapHash(map.filename, checkMapHash))
 			{
-				std::string fullMapName = physfsFormatMapName(challengeRunCustomStartLevel.c_str());
-				loadMap(fullMapName.c_str(), &map, map.entities, map.creatures, &checkMapHash);
-				if ( !verifyMapHash(fullMapName.c_str(), checkMapHash) )
-				{
-					conductGameChallenges[CONDUCT_MODDED] = 1;
-				}
-			}
-			else
-			{
-				physfsLoadMapFile(currentlevel, mapseed, false, &checkMapHash);
-				if (!verifyMapHash(map.filename, checkMapHash))
-				{
-					conductGameChallenges[CONDUCT_MODDED] = 1;
-					Mods::disableSteamAchievements = true;
-				}
-
-				if ( quickStartPortal && !strcmp(map.name, "Start Map") && currentlevel == 0 )
-				{
-					Entity* portal = newEntity(118, 0, map.entities, map.creatures);
-					setSpriteAttributes(portal, nullptr, nullptr);
-					portal->x = 6 * 16;
-					portal->y = 13 * 16;
-					portal->teleporterX = 6;
-					portal->teleporterY = 25;
-					portal->teleporterType = 2;
-				}
+				conductGameChallenges[CONDUCT_MODDED] = 1;
+				Mods::disableSteamAchievements = true;
 			}
 		}
 		else
@@ -9353,7 +9189,6 @@ void doNewGame(bool makeHighscore) {
 	if ( loadingsavegame && multiplayer != CLIENT )
 	{
 		loadingsavegame = 0;
-		loadinglobbykey = 0;
 	}
 
     // shuffle scroll names
@@ -9430,8 +9265,7 @@ void doCredits() {
 void doEndgame(bool saveHighscore) {
 	int c, x;
 	bool endTutorial = false;
-	bool localScores = gameModeManager.allowsHiscores();
-	bool onlineScores = gameModeManager.allowsGlobalHiscores();
+	bool allowedHighscores = gameModeManager.allowsHiscores();
 	bool allowedSavegames = gameModeManager.allowsSaves();
 	if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_TUTORIAL )
 	{
@@ -9439,17 +9273,9 @@ void doEndgame(bool saveHighscore) {
 		endTutorial = true;
 		gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
 	}
-	else if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT )
-	{
-		gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-	}
-	else if ( gameModeManager.getMode() == GameModeManager_t::GAME_MODE_CUSTOM_RUN )
-	{
-		gameModeManager.setMode(GameModeManager_t::GAME_MODE_DEFAULT);
-	}
 
 	// in greater numbers achievement
-	if ( victory && victory <= 5 )
+	if ( victory )
 	{
 		int k = 0;
 		for ( int c = 0; c < MAXPLAYERS; c++ )
@@ -9534,36 +9360,24 @@ void doEndgame(bool saveHighscore) {
 	}
 
 	// make a highscore!
-	if ( !endTutorial && saveHighscore )
+	if ( !endTutorial && allowedHighscores && saveHighscore )
 	{
         if (splitscreen) {
             for (int c = 0; c < MAXPLAYERS; ++c) {
                 if (!client_disconnected[c]) {
-					if ( localScores )
-					{
-						saveScore(c);
-					}
+                    saveScore(c);
 #ifdef USE_PLAYFAB
 					if ( c == 0 )
 					{
-						if ( onlineScores )
-						{
-							playfabUser.postScore(c);
-						}
+						playfabUser.postScore(c);
 					}
 #endif
                 }
             }
         } else {
-			if ( localScores )
-			{
-				saveScore(clientnum);
-			}
+            saveScore(clientnum);
 #ifdef USE_PLAYFAB
-			if ( onlineScores )
-			{
-				playfabUser.postScore(clientnum);
-			}
+			playfabUser.postScore(clientnum);
 #endif
         }
         saveAllScores(SCORESFILE);
@@ -9683,11 +9497,6 @@ void doEndgame(bool saveHighscore) {
 			{
 				steamAchievement("BARONY_ACH_BOOTS_OF_SPEED");
 			}
-		}
-
-		if ( gameModeManager.currentSession.challengeRun.isActive() )
-		{
-			steamAchievement("BARONY_ACH_REAP_SOW");
 		}
 
 		if ( victory == 1 )
@@ -9819,7 +9628,6 @@ void doEndgame(bool saveHighscore) {
 	}
 
 	gameModeManager.currentSession.seededRun.reset();
-	gameModeManager.currentSession.challengeRun.reset();
 
 	// disable cheats
 	noclip = false;
@@ -11219,7 +11027,6 @@ void buttonOpenCharacterCreationWindow(button_t* my)
 
 	playing_random_char = false;
 	loadingsavegame = 0;
-	loadinglobbykey = 0;
 	loadGameSaveShowRectangle = 0;
 	// reset class loadout
 	clientnum = 0;

@@ -42,9 +42,38 @@ struct spell_t;
 // entity class
 class Entity
 {
+	Sint32& char_gonnavomit;
+	Sint32& char_heal;
+	Sint32& char_energize;
+	Sint32& char_torchtime;
+	Sint32& char_poison;
+	Sint32& char_fire;		// skill[36] - Counter for how many ticks Entity will be on fire
 	Sint32& circuit_status;	// Use CIRCUIT_OFF and CIRCUIT_ON.
 	Sint32& switch_power;	// Switch/mechanism power status.
 	Sint32& chanceToPutOutFire; // skill[37] - Value between 5 and 10, with 10 being the default starting chance, and 5 being absolute minimum
+
+	//Chest skills.
+	//skill[0]
+	Sint32& chestInit;
+	//skill[1]
+	//0 = closed. 1 = open.
+	//0 = closed. 1 = open.
+	Sint32& chestStatus;
+	//skill[2] is reserved for all entities.
+	//skill[3]
+	Sint32& chestHealth;
+	//skill[5]
+	//Index of the player the chest was opened by.
+	Sint32& chestOpener;
+	//skill[6]
+	Sint32& chestLidClicked;
+	//skill[7]
+	Sint32& chestAmbience;
+	//skill[8]
+	Sint32& chestMaxHealth;
+	//skill[9]
+	//field to be set if the chest sprite is 75-81 in the editor, otherwise should stay at value 0
+	Sint32& chestType;
 
 	// Power crystal skills
 	Sint32& crystalInitialised; // 1 if init, else 0 skill[1]
@@ -133,33 +162,7 @@ public:
 	int mapGenerationRoomX = 0; // captures the x/y of the 'room' this spawned in on generate dungeon
 	int mapGenerationRoomY = 0; // captures the x/y of the 'room' this spawned in on generate dungeon
 
-	BaronyRNG* entity_rng = nullptr;
-	void seedEntityRNG(Uint32 seed);
-
 	//--PUBLIC CHEST SKILLS--
-
-	//Chest skills.
-	//skill[0]
-	Sint32& chestInit;
-	//skill[1]
-	//0 = closed. 1 = open.
-	//0 = closed. 1 = open.
-	Sint32& chestStatus;
-	//skill[2] is reserved for all entities.
-	//skill[3]
-	Sint32& chestHealth;
-	//skill[5]
-	//Index of the player the chest was opened by.
-	Sint32& chestOpener;
-	//skill[6]
-	Sint32& chestLidClicked;
-	//skill[7]
-	Sint32& chestAmbience;
-	//skill[8]
-	Sint32& chestMaxHealth;
-	//skill[9]
-	//field to be set if the chest sprite is 75-81 in the editor, otherwise should stay at value 0
-	Sint32& chestType;
 
 	//skill[4]
 	//0 = unlocked. 1 = locked.
@@ -176,14 +179,6 @@ public:
 	Sint32& chestHasVampireBook; // skill[11]
 	Sint32& chestLockpickHealth; // skill[12]
 	Sint32& chestOldHealth; //skill[15]
-
-	Sint32& char_gonnavomit; // skill[26]
-	Sint32& char_heal; // skill[22]
-	Sint32& char_energize; // skill[23]
-	Sint32& char_drunk; // skill[24]
-	Sint32& char_torchtime; // skill[25]
-	Sint32& char_poison; // skill[21]
-	Sint32& char_fire;		// skill[36] - Counter for how many ticks Entity will be on fire
 
 	//--PUBLIC MONSTER SKILLS--
 	Sint32& monsterState; //skill[0]
@@ -244,7 +239,6 @@ public:
 	real_t& highlightForUI; //fskill[29] for highlighting interactibles
 	real_t& highlightForUIGlow; //fskill[28] for highlighting animation
 	real_t& grayscaleGLRender; //fskill[27] for grayscale rendering
-	real_t& noColorChangeAllyLimb; // fskill[26] for ignoring recolor of follower limbs
 
 	//--PUBLIC PLAYER SKILLS--
 	Sint32& playerLevelEntrySpeech; //skill[18]
@@ -464,7 +458,6 @@ public:
 	Sint32& arrowShotByWeapon; //skill[7]
 	Sint32& arrowQuiverType; //skill[8]
 	Sint32& arrowShotByParent; //skill[9]
-	Sint32& arrowDropOffEquipmentModifier; //skill[14]
 	enum arrowShotBy : int
 	{
 		ARROW_SHOT_BY_TRAP,
@@ -609,7 +602,7 @@ public:
 	void handleEffectsClient();
 
 	void effectTimes();
-	bool increaseSkill(int skill, bool notify = true);
+	void increaseSkill(int skill, bool notify = true);
 
 	Stat* getStats() const;
 
@@ -760,7 +753,7 @@ public:
 			return false;
 		}
 
-		return (getStats()->getModifiedProficiency(proficiency) >= CAPSTONE_UNLOCK_LEVEL[proficiency]);
+		return (getStats()->PROFICIENCIES[proficiency] >= CAPSTONE_UNLOCK_LEVEL[proficiency]);
 	}
 
 	/*
@@ -841,7 +834,7 @@ public:
 	// calc damage/effects for ranged weapons.
 	void setRangedProjectileAttack(Entity& marksman, Stat& myStats, int optionalOverrideForArrowType = 0);
 	bool setArrowProjectileProperties(int weaponType);
-	real_t yawDifferenceFromEntity(Entity* entity); // calc targets yaw compared to an entity, returns 0 - 2 * PI, where > PI is facing towards player.
+	real_t yawDifferenceFromPlayer(int player); // calc targets yaw compared to a player, returns 0 - 2 * PI, where > PI is facing towards player.
 	spell_t* getActiveMagicEffect(int spellID);
 
 	/*
@@ -932,7 +925,6 @@ public:
 	void succubusChooseWeapon(const Entity* target, double dist);
 	void skeletonSummonSetEquipment(Stat* myStats, int rank);
 	static void tinkerBotSetStats(Stat* myStats, int rank);
-	static void mimicSetStats(Stat* myStats);
 	bool monsterInMeleeRange(const Entity* target, double dist) const
 	{
 		return (dist < STRIKERANGE);
@@ -979,12 +971,7 @@ public:
 	void lichFireSetNextAttack(Stat& myStats);
 	void lichIceSetNextAttack(Stat& myStats);
 
-	int getEntityInspirationFromAllies();
-	int getFollowerBonusDamageResist();
-	int getFollowerBonusTrapResist();
-	int getFollowerBonusHPRegen();
-	int getHPRestoreOnLevelUp();
-	void monsterMoveBackwardsAndPath(bool trySidesFirst = false); // monster tries to move backwards in a cross shaped area if stuck against an entity.
+	void monsterMoveBackwardsAndPath(); // monster tries to move backwards in a cross shaped area if stuck against an entity.
 	bool monsterHasLeader(); // return true if monsterstats->leader_uid is not 0.
 	void monsterAllySendCommand(int command, int destX, int destY, Uint32 uid = 0); // update the behavior of allied NPCs.
 	bool monsterAllySetInteract(); // set interact flags for allied NPCs.
@@ -1026,10 +1013,6 @@ public:
 	int getColliderSfxOnBreak() const;
 	int getColliderLangName() const;
 	static void monsterRollLevelUpStats(int increasestat[3]);
-	bool disturbMimic(Entity* touched, bool takenDamage, bool doMessage);
-	bool isInertMimic() const;
-	bool entityCanVomit() const;
-	bool doSilkenBowOnAttack(Entity* attacker);
 };
 
 Monster getMonsterFromPlayerRace(int playerRace); // convert playerRace into the relevant monster type
@@ -1043,6 +1026,13 @@ extern list_t entitiesToDelete[MAXPLAYERS];
 extern Uint32 entity_uids, lastEntityUIDs;
 //extern Entity *players[4];
 extern Uint32 nummonsters;
+
+#define CHAR_POISON my->skill[21] //TODO: Being replaced with Entity char_poison
+#define CHAR_HEAL my->skill[22] //TODO: Being replaced with Entity::char_heal
+#define CHAR_ENERGIZE my->skill[23] //TODO: Being replaced with Entity::char_energize
+#define CHAR_DRUNK my->skill[24]
+#define CHAR_TORCHTIME my->skill[25] //TODO: Being replaced with Entity::char_torchtime
+#define CHAR_GONNAVOMIT my->skill[26] //TODO: Being replaced with Entity::char_gonnavomit
 
 class Item;
 
@@ -1115,7 +1105,6 @@ void actChest(Entity* my);
 void actChestLid(Entity* my);
 void closeChestClientside(const int player); //Called by the client to manage all clientside stuff relating to closing a chest.
 Item* addItemToChestClientside(const int player, Item* item, bool forceNewStack, Item* specificDestinationStack); //Called by the client to manage all clientside stuff relating to adding an item to a chest.
-void createChestInventory(Entity* my, int chestType);
 
 //---Stalag functions---
 void actStalagFloor(Entity* my);
@@ -1147,7 +1136,7 @@ void actTextSource(Entity* my);
 
 //checks if a sprite falls in certain sprite ranges
 
-static const int NUM_ITEM_STRINGS = 333;
+static const int NUM_ITEM_STRINGS = 292;
 static const int NUM_ITEM_STRINGS_BY_TYPE = 129;
 static const int NUM_EDITOR_SPRITES = 180;
 static const int NUM_EDITOR_TILES = 350;
@@ -1166,11 +1155,11 @@ extern char monsterEditorNameStrings[NUMMONSTERS][16];
 extern char itemStringsByType[10][NUM_ITEM_STRINGS_BY_TYPE][32];
 extern char itemNameStrings[NUM_ITEM_STRINGS][32];
 int canWearEquip(Entity* entity, int category);
-void createMonsterEquipment(Stat* stats, BaronyRNG& rng);
+void createMonsterEquipment(Stat* stats);
 int countCustomItems(Stat* stats);
 int countDefaultItems(Stat* stats);
 void copyMonsterStatToPropertyStrings(Stat* tmpSpriteStats);
-void setRandomMonsterStats(Stat* stats, BaronyRNG& rng);
+void setRandomMonsterStats(Stat* stats);
 
 int checkEquipType(const Item *ITEM);
 
@@ -1214,7 +1203,7 @@ int playerEntityMatchesUid(Uint32 uid); // Returns >= 0 if player uid matches ui
 bool monsterNameIsGeneric(Stat& monsterStats); // returns true if a monster's name is a generic decription rather than a miniboss.
 
 bool playerRequiresBloodToSustain(int player); // vampire type or accursed class
-void spawnBloodVialOnMonsterDeath(Entity* entity, Stat* hitstats, Entity* killer);
+void spawnBloodVialOnMonsterDeath(Entity* entity, Stat* hitstats);
 
 enum EntityHungerIntervals : int
 {
@@ -1230,7 +1219,7 @@ int getEntityHungerInterval(int player, Entity* my, Stat* myStats, EntityHungerI
 //Fountain potion drop chance variables.
 extern const std::vector<unsigned int> fountainPotionDropChances;
 extern const std::vector<std::pair<int, int>> potionStandardAppearanceMap;
-std::pair<int, int> fountainGeneratePotionDrop(BaronyRNG& rng);
+std::pair<int, int> fountainGeneratePotionDrop();
 
 class TextSourceScript
 {

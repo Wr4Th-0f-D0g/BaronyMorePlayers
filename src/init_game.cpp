@@ -56,20 +56,9 @@
 
 void initGameDatafiles(bool moddedReload)
 {
-	for ( int i = 0; i < NUMITEMS && i < (NUM_ITEM_STRINGS - 2); ++i )
-	{
-		ItemTooltips.itemNameStringToItemID[itemNameStrings[i + 2]] = i;
-	}
 	ItemTooltips.readItemsFromFile();
 	ItemTooltips.readTooltipsFromFile();
 	ItemTooltips.readItemLocalizationsFromFile();
-	ItemTooltips.readBookLocalizationsFromFile();
-	for ( int i = 0; i < MAXPLAYERS; ++i )
-	{
-		// set these to something silly clear the tooltip cache match
-		players[i]->worldUI.worldTooltipItem.type = WOODEN_SHIELD;
-		players[i]->worldUI.worldTooltipItem.count = 99;
-	}
 
 	loadHUDSettingsJSON();
 	Player::SkillSheet_t::loadSkillSheetJSON();
@@ -87,10 +76,6 @@ void initGameDatafiles(bool moddedReload)
 	StatueManager.readAllStatues();
 	GameModeManager_t::CurrentSession_t::SeededRun_t::readSeedNamesFromFile();
 	loadLights();
-	for ( int c = 1; c < NUMMONSTERS; ++c )
-	{
-		EquipmentModelOffsets.readFromFile(monstertypename[c], c);
-	}
 }
 
 void initGameDatafilesAsync(bool moddedReload)
@@ -814,34 +799,6 @@ void loadAchievementData(const char* path) {
 			return;
 		}
 		auto achName = it.name.GetString();
-#ifdef NINTENDO
-		if ( !strcmp(achName, "BARONY_ACH_LOCAL_CUSTOMS") )
-		{
-			continue;
-		}
-#endif
-#ifndef USE_PLAYFAB
-		if ( !strcmp(achName, "BARONY_ACH_BLOOM_PLANTED") )
-		{
-			continue;
-		}
-		if ( !strcmp(achName, "BARONY_ACH_DUNGEONSEED") )
-		{
-			continue;
-		}
-		if ( !strcmp(achName, "BARONY_ACH_GROWTH_MINDSET") )
-		{
-			continue;
-		}
-		if ( !strcmp(achName, "BARONY_ACH_REAP_SOW") )
-		{
-			continue;
-		}
-		if ( !strcmp(achName, "BARONY_ACH_SPROUTS") )
-		{
-			continue;
-		}
-#endif
 		const auto& ach = it.value.GetObject();
 		if (ach.HasMember("name") && ach["name"].IsString()) {
 			achievementNames[achName] = ach["name"].GetString();

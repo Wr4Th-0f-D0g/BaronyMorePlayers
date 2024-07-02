@@ -108,6 +108,7 @@ namespace MainMenu {
 	void createDummyMainMenu();             // creates a main menu devoid of widgets
 	void closeMainMenu();                   // closes the menu and unpauses the game
 
+
 	// special events:
 
     void controllerDisconnected(int player);                        // controller disconnect prompt, eg if a player unplugs a controller

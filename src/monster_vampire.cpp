@@ -22,7 +22,6 @@ See LICENSE for details.
 #include "player.hpp"
 #include "magic/magic.hpp"
 #include "prng.hpp"
-#include "mod_tools.hpp"
 
 void initVampire(Entity* my, Stat* myStats)
 {
@@ -42,8 +41,6 @@ void initVampire(Entity* my, Stat* myStats)
 	}
 	if ( multiplayer != CLIENT && !MONSTER_INIT )
 	{
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-
 		if ( myStats != nullptr )
 		{
 		    if (myStats->sex == FEMALE)
@@ -83,11 +80,11 @@ void initVampire(Entity* my, Stat* myStats)
 				myStats->RANDOM_CHR = 0;
 				myStats->EXP = 0;
 				myStats->LVL = 18;
-				myStats->GOLD = 50 + rng.rand() % 50;
+				myStats->GOLD = 50 + local_rng.rand() % 50;
 				myStats->RANDOM_GOLD = 0;
 				for ( c = 0; c < 4; ++c )
 				{
-					if ( rng.rand() % 2 == 0 )
+					if ( local_rng.rand() % 2 == 0 )
 					{
 						Entity* entity = summonMonster(GHOUL, my->x, my->y);
 						if ( entity )
@@ -99,7 +96,6 @@ void initVampire(Entity* my, Stat* myStats)
 								strcpy(followerStats->name, "enslaved ghoul");
 								followerStats->leader_uid = entity->parent;
 							}
-							entity->seedEntityRNG(rng.getU32());
 						}
 					}
 				}
@@ -116,16 +112,16 @@ void initVampire(Entity* my, Stat* myStats)
 			}
 
 			// apply random stat increases if set in stat_shared.cpp or editor
-			setRandomMonsterStats(myStats, rng);
+			setRandomMonsterStats(myStats);
 
 			// generate 6 items max, less if there are any forced items from boss variants
 			int customItemsToGenerate = ITEM_CUSTOM_SLOT_LIMIT;
 
 			// generates equipment and weapons if available from editor
-			createMonsterEquipment(myStats, rng);
+			createMonsterEquipment(myStats);
 
 			// create any custom inventory items from editor if available
-			createCustomInventory(myStats, customItemsToGenerate, rng);
+			createCustomInventory(myStats, customItemsToGenerate);
 
 			// count if any custom inventory items from editor
 			int customItems = countCustomItems(myStats); //max limit of 6 custom items per entity.
@@ -146,14 +142,14 @@ void initVampire(Entity* my, Stat* myStats)
 				case 4:
 				case 3:
 				case 2:
-					if ( rng.rand() % 4 == 0 ) // 1 in 4
+					if ( local_rng.rand() % 4 == 0 ) // 1 in 4
 					{
-						newItem(MAGICSTAFF_BLEED, static_cast<Status>(DECREPIT + rng.rand() % 2), -1 + rng.rand() % 3, 1, rng.rand(), false, &myStats->inventory);
+						newItem(MAGICSTAFF_BLEED, static_cast<Status>(DECREPIT + local_rng.rand() % 2), -1 + local_rng.rand() % 3, 1, local_rng.rand(), false, &myStats->inventory);
 					}
 				case 1:
-					if ( rng.rand() % 10 == 0 ) // 1 in 10
+					if ( local_rng.rand() % 10 == 0 ) // 1 in 10
 					{
-						newItem(VAMPIRE_DOUBLET, static_cast<Status>(WORN + rng.rand() % 2), -1 + rng.rand() % 3, 1, rng.rand(), false, &myStats->inventory);
+						newItem(VAMPIRE_DOUBLET, static_cast<Status>(WORN + local_rng.rand() % 2), -1 + local_rng.rand() % 3, 1, local_rng.rand(), false, &myStats->inventory);
 					}
 					break;
 				default:
@@ -163,23 +159,23 @@ void initVampire(Entity* my, Stat* myStats)
 			//give weapon
 			if ( myStats->weapon == nullptr && myStats->EDITOR_ITEMS[ITEM_SLOT_WEAPON] == 1 )
 			{
-				switch ( rng.rand() % 10 )
+				switch ( local_rng.rand() % 10 )
 				{
 					case 0:
 					case 1:
 					case 2:
 					case 3:
-						//myStats->weapon = newItem(SHORTBOW, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->weapon = newItem(SHORTBOW, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 					case 4:
 					case 5:
 					case 6:
 					case 7:
-						//myStats->weapon = newItem(CROSSBOW, WORN, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->weapon = newItem(CROSSBOW, WORN, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 					case 8:
 					case 9:
-						//myStats->weapon = newItem(MAGICSTAFF_COLD, EXCELLENT, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->weapon = newItem(MAGICSTAFF_COLD, EXCELLENT, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 				}
 			}
@@ -187,7 +183,7 @@ void initVampire(Entity* my, Stat* myStats)
 			//give helmet
 			if ( myStats->helmet == nullptr && myStats->EDITOR_ITEMS[ITEM_SLOT_HELM] == 1 )
 			{
-				switch ( rng.rand() % 10 )
+				switch ( local_rng.rand() % 10 )
 				{
 					case 0:
 					case 1:
@@ -196,13 +192,13 @@ void initVampire(Entity* my, Stat* myStats)
 					case 4:
 						break;
 					case 5:
-						//myStats->helmet = newItem(LEATHER_HELM, DECREPIT, -1 + rng.rand() % 2, 1, 0, false, nullptr);
+						//myStats->helmet = newItem(LEATHER_HELM, DECREPIT, -1 + local_rng.rand() % 2, 1, 0, false, nullptr);
 						break;
 					case 6:
 					case 7:
 					case 8:
 					case 9:
-						//myStats->helmet = newItem(IRON_HELM, DECREPIT, -1 + rng.rand() % 2, 1, 0, false, nullptr);
+						//myStats->helmet = newItem(IRON_HELM, DECREPIT, -1 + local_rng.rand() % 2, 1, 0, false, nullptr);
 						break;
 				}
 			}
@@ -210,7 +206,7 @@ void initVampire(Entity* my, Stat* myStats)
 			//give shield
 			if ( myStats->shield == nullptr && myStats->EDITOR_ITEMS[ITEM_SLOT_SHIELD] == 1 )
 			{
-				switch ( rng.rand() % 10 )
+				switch ( local_rng.rand() % 10 )
 				{
 					case 0:
 					case 1:
@@ -221,13 +217,13 @@ void initVampire(Entity* my, Stat* myStats)
 						break;
 					case 6:
 					case 7:
-						//myStats->shield = newItem(WOODEN_SHIELD, DECREPIT, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->shield = newItem(WOODEN_SHIELD, DECREPIT, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 					case 8:
-						//myStats->shield = newItem(BRONZE_SHIELD, DECREPIT, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->shield = newItem(BRONZE_SHIELD, DECREPIT, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 					case 9:
-						//myStats->shield = newItem(IRON_SHIELD, DECREPIT, -1 + rng.rand() % 2, 1, rng.rand(), false, nullptr);
+						//myStats->shield = newItem(IRON_SHIELD, DECREPIT, -1 + local_rng.rand() % 2, 1, local_rng.rand(), false, nullptr);
 						break;
 				}
 			}
@@ -337,7 +333,6 @@ void initVampire(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[VAMPIRE][6][0]; // 1.5
 	entity->focaly = limbs[VAMPIRE][6][1]; // 0
 	entity->focalz = limbs[VAMPIRE][6][2]; // -.5
@@ -358,7 +353,6 @@ void initVampire(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[VAMPIRE][7][0]; // 2
 	entity->focaly = limbs[VAMPIRE][7][1]; // 0
 	entity->focalz = limbs[VAMPIRE][7][2]; // 0
@@ -381,7 +375,6 @@ void initVampire(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[VAMPIRE][8][0]; // 0
 	entity->focaly = limbs[VAMPIRE][8][1]; // 0
 	entity->focalz = limbs[VAMPIRE][8][2]; // 4
@@ -404,7 +397,6 @@ void initVampire(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[VAMPIRE][9][0]; // 0
 	entity->focaly = limbs[VAMPIRE][9][1]; // 0
 	entity->focalz = limbs[VAMPIRE][9][2]; // -1.75
@@ -427,7 +419,6 @@ void initVampire(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[VAMPIRE][10][0]; // 0
 	entity->focaly = limbs[VAMPIRE][10][1]; // 0
 	entity->focalz = limbs[VAMPIRE][10][2]; // .5
@@ -1208,7 +1199,7 @@ void vampireMoveBodyparts(Entity* my, Stat* myStats, double dist)
 				if ( multiplayer != CLIENT )
 				{
 					bool hasSteelHelm = false;
-					/*if ( myStats->helmet )
+					if ( myStats->helmet )
 					{
 						if ( myStats->helmet->type == STEEL_HELM
 							|| myStats->helmet->type == CRYSTAL_HELM
@@ -1216,7 +1207,7 @@ void vampireMoveBodyparts(Entity* my, Stat* myStats, double dist)
 						{
 							hasSteelHelm = true;
 						}
-					}*/
+					}
 					if ( myStats->mask == nullptr || myStats->EFFECTS[EFF_INVISIBLE] || wearingring || hasSteelHelm ) //TODO: isInvisible()?
 					{
 						entity->flags[INVISIBLE] = true;
@@ -1272,11 +1263,6 @@ void vampireMoveBodyparts(Entity* my, Stat* myStats, double dist)
 					if ( entity->sprite == items[MASK_SHAMAN].index )
 					{
 						entity->roll = 0;
-						my->setHelmetLimbOffset(entity);
-						my->setHelmetLimbOffsetWithMask(helmet, entity);
-					}
-					else if ( EquipmentModelOffsets.modelOffsetExists(VAMPIRE, entity->sprite) )
-					{
 						my->setHelmetLimbOffset(entity);
 						my->setHelmetLimbOffsetWithMask(helmet, entity);
 					}

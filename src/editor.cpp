@@ -1091,9 +1091,6 @@ void makeUndo()
 	undomap->entities->last = nullptr;
 	undomap->creatures = nullptr;
 	undomap->worldUI = nullptr;
-	undomap->trapexcludelocations = nullptr;
-	undomap->monsterexcludelocations = nullptr;
-	undomap->lootexcludelocations = nullptr;
 	for ( node = map.entities->first; node != nullptr; node = node->next )
 	{
 		Entity* entity = newEntity(((Entity*)node->element)->sprite, 1, undomap->entities, nullptr);
@@ -1255,7 +1252,7 @@ int loadTilePalettes()
 	}
 
 	// compose filename
-	strcpy(filename, "editor/tilepalettes.txt");
+	strcpy(filename, "/editor/tilepalettes.txt");
 
 	// check if palette file is valid
 	if ( !dataPathExists(filename) )
@@ -1359,7 +1356,7 @@ int saveTilePalettes()
 	}
 
 	// compose filename
-	strcpy(filename, "editor/tilepalettes.txt");
+	strcpy(filename, "/editor/tilepalettes.txt");
 
 	// check if palette file is valid
 	if ( !dataPathExists(filename) )
@@ -2026,7 +2023,6 @@ int main(int argc, char** argv)
 
 	ItemTooltips.readItemsFromFile();
 	ItemTooltips.readItemLocalizationsFromFile();
-	ItemTooltips.readBookLocalizationsFromFile();
 	for ( c = 0; c < NUMITEMS; c++ )
 	{
 		items[c].surfaces.first = nullptr;
@@ -4616,7 +4612,7 @@ int main(int argc, char** argv)
 									{
 										printTextFormattedColor(font8x8_bmp, pad_x3, pad_y2, colorRandom, "Completely random monster");
 									}
-									else if ( propertyInt == 6 || propertyInt == 12 )
+									else if ( propertyInt == 6 || propertyInt == 12 || propertyInt == 16 )
 									{
 										printTextFormattedColor(font8x8_bmp, pad_x3, pad_y2, colorBad, "Error: Unused monster ID, will reset to 0");
 									}

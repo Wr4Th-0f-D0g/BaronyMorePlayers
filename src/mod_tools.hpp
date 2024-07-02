@@ -75,7 +75,6 @@ public:
 	static const std::vector<std::string> itemStatusStrings;
 	static const std::vector<std::string> shopkeeperTypeStrings;
 	MonsterStatCustomManager() = default;
-	static BaronyRNG monster_stat_rng;
 
 	int getSlotFromKeyName(std::string keyName)
 	{
@@ -179,7 +178,7 @@ public:
 			{
 				return invalidEntry;
 			}
-			return (arr[rapidjson::SizeType(monster_stat_rng.rand() % arr.Size())].GetString());
+			return (arr[rapidjson::SizeType(local_rng.rand() % arr.Size())].GetString());
 		}
 		int getRandomArrayInt(const rapidjson::GenericArray<true, rapidjson::GenericValue<rapidjson::UTF8<>>>& arr, int invalidEntry)
 		{
@@ -187,7 +186,7 @@ public:
 			{
 				return invalidEntry;
 			}
-			return (arr[rapidjson::SizeType(monster_stat_rng.rand() % arr.Size())].GetInt());
+			return (arr[rapidjson::SizeType(local_rng.rand() % arr.Size())].GetInt());
 		}
 
 		bool readKeyToItemEntry(rapidjson::Value::ConstMemberIterator& itr)
@@ -267,7 +266,7 @@ public:
 			{
 				if ( itr->value.IsArray() )
 				{
-					this->appearance = static_cast<Uint32>(getRandomArrayInt(itr->value.GetArray(), monster_stat_rng.rand()));
+					this->appearance = static_cast<Uint32>(getRandomArrayInt(itr->value.GetArray(), local_rng.rand()));
 				}
 				else if ( itr->value.IsInt() )
 				{
@@ -278,7 +277,7 @@ public:
 					std::string str = itr->value.GetString();
 					if ( str.compare("random") == 0 )
 					{
-						this->appearance = monster_stat_rng.rand();
+						this->appearance = local_rng.rand();
 					}
 				}
 				return true;
@@ -296,7 +295,7 @@ public:
 			else if ( name.compare("drop_percent_chance") == 0 )
 			{
 				this->dropChance = itr->value.GetInt();
-				if ( monster_stat_rng.rand() % 100 >= this->dropChance )
+				if ( local_rng.rand() % 100 >= this->dropChance )
 				{
 					this->dropItemOnDeath = false;
 				}
@@ -405,7 +404,7 @@ public:
 					++index;
 				}
 
-				int result = monster_stat_rng.discrete(variantChances.data(), variantChances.size());
+				int result = local_rng.discrete(variantChances.data(), variantChances.size());
 				return followerVariants.at(result).first;
 			}
 			return "none";
@@ -451,7 +450,7 @@ public:
 			}
 			for ( int i = 0; i < NUMPROFICIENCIES; ++i )
 			{
-				PROFICIENCIES[i] = myStats->getProficiency(i);
+				PROFICIENCIES[i] = myStats->PROFICIENCIES[i];
 			}
 		}
 
@@ -491,7 +490,7 @@ public:
 
 			for ( int i = 0; i < NUMPROFICIENCIES; ++i )
 			{
-				myStats->setProficiency(i, PROFICIENCIES[i]);
+				myStats->PROFICIENCIES[i] = PROFICIENCIES[i];
 			}
 		}
 
@@ -503,7 +502,7 @@ public:
 				equippedSlots.insert(it.second);
 				if ( it.first.percentChance < 100 )
 				{
-					if ( monster_stat_rng.rand() % 100 >= it.first.percentChance )
+					if ( local_rng.rand() % 100 >= it.first.percentChance )
 					{
 						continue;
 					}
@@ -612,7 +611,7 @@ public:
 				}
 				if ( it.percentChance < 100 )
 				{
-					if ( monster_stat_rng.rand() % 100 >= it.percentChance )
+					if ( local_rng.rand() % 100 >= it.percentChance )
 					{
 						continue;
 					}
@@ -686,7 +685,7 @@ public:
 				{
 					if ( shopkeeperMinItems >= 0 && shopkeeperMaxItems >= 0 )
 					{
-						numItems = shopkeeperMinItems + monster_stat_rng.rand() % std::max(1, (shopkeeperMaxItems - shopkeeperMinItems + 1));
+						numItems = shopkeeperMinItems + local_rng.rand() % std::max(1, (shopkeeperMaxItems - shopkeeperMinItems + 1));
 						myStats->MISC_FLAGS[STAT_FLAG_SHOPKEEPER_CUSTOM_PROPERTIES] |= numItems + 1;
 					}
 					if ( shopkeeperMaxGeneratedBlessing >= 0 )
@@ -1162,7 +1161,7 @@ public:
 							++index;
 						}
 
-						int result = monster_stat_rng.discrete(itemChances.data(), itemChances.size());
+						int result = local_rng.discrete(itemChances.data(), itemChances.size());
 						statEntry->equipped_items.push_back(std::make_pair(itemsToChoose.at(result).first, itemsToChoose.at(result).second));
 					}
 				}
@@ -1202,7 +1201,7 @@ public:
 							++index;
 						}
 
-						int result = monster_stat_rng.discrete(itemChances.data(), itemChances.size());
+						int result = local_rng.discrete(itemChances.data(), itemChances.size());
 						statEntry->inventory_items.push_back(itemsToChoose.at(result));
 					}
 				}
@@ -1294,7 +1293,7 @@ public:
 							++index;
 						}
 
-						std::string result = statEntry->shopkeeperStoreTypes.at(monster_stat_rng.discrete(storeChances.data(), storeChances.size())).first;
+						std::string result = statEntry->shopkeeperStoreTypes.at(local_rng.discrete(storeChances.data(), storeChances.size())).first;
 						index = 0;
 						for ( auto& lookup : shopkeeperTypeStrings )
 						{
@@ -1341,7 +1340,6 @@ class MonsterCurveCustomManager
 	bool usingCustomManager = false;
 public:
 	MonsterCurveCustomManager() = default;
-	BaronyRNG monster_curve_rng;
 
 	class MonsterCurveEntry
 	{
@@ -1377,11 +1375,8 @@ public:
 	std::vector<LevelCurve> allLevelCurves;
 	inline bool inUse() { return usingCustomManager; };
 
-	void readFromFile(Uint32 seed)
+	void readFromFile()
 	{
-		monster_curve_rng.seedBytes(&seed, sizeof(seed));
-		MonsterStatCustomManager::monster_stat_rng.seedBytes(&seed, sizeof(seed));
-
 		allLevelCurves.clear();
 		usingCustomManager = false;
 		if ( PHYSFS_getRealDir("/data/monstercurve.json") )
@@ -1542,7 +1537,7 @@ public:
 						}
 					}
 				}
-				int result = monster_curve_rng.discrete(monsterCurveChances.data(), monsterCurveChances.size());
+				int result = local_rng.discrete(monsterCurveChances.data(), monsterCurveChances.size());
 				//printlog("[MonsterCurveCustomManager]: Rolled: %d", result);
 				return result;
 			}
@@ -1584,7 +1579,7 @@ public:
 				}
 				if ( !variantResults.empty() )
 				{
-					int result = monster_curve_rng.discrete(variantChances.data(), variantChances.size());
+					int result = local_rng.discrete(variantChances.data(), variantChances.size());
 					return variantResults[result];
 				}
 			}
@@ -1609,7 +1604,7 @@ public:
 							++index;
 						}
 
-						int result = monster_curve_rng.discrete(variantChances.data(), variantChances.size());
+						int result = local_rng.discrete(variantChances.data(), variantChances.size());
 						return monster.variants.at(result).first;
 					}
 				}
@@ -1641,7 +1636,6 @@ public:
 								followerEntry->setStatsAndEquipmentToMonster(summonedFollower->getStats());
 								summonedFollower->getStats()->leader_uid = entity->getUID();
 							}
-							summonedFollower->seedEntityRNG(monster_curve_rng.getU32());
 						}
 						delete followerEntry;
 					}
@@ -1654,7 +1648,6 @@ public:
 							{
 								summonedFollower->getStats()->leader_uid = entity->getUID();
 							}
-							summonedFollower->seedEntityRNG(monster_curve_rng.getU32());
 						}
 					}
 				}
@@ -2429,12 +2422,12 @@ public:
 	};
 	GameModes currentMode = GAME_MODE_DEFAULT;
 	GameModes getMode() const { return currentMode; };
-	void setMode(const GameModes mode);
+	void setMode(const GameModes mode) { currentMode = mode; };
 	bool allowsSaves();
 	bool isFastDeathGrave();
 	bool allowsBoulderBreak();
 	bool allowsHiscores();
-	bool allowsStatisticsOrAchievements(const char* achName, int statIndex);
+	bool allowsStatisticsOrAchievements();
 	bool allowsGlobalHiscores();
 
 	class CurrentSession_t
@@ -2470,64 +2463,14 @@ public:
 			static std::vector<std::string> suffixes;
 			static void readSeedNamesFromFile();
 		} seededRun;
-
-		class ChallengeRun_t
-		{
-			bool inUse = false;
-		public:
-			enum ChallengeEvents_t
-			{
-				CHEVENT_XP_250,
-				CHEVENT_NOXP_LVL_20,
-				CHEVENT_SHOPPING_SPREE,
-				CHEVENT_BFG,
-				CHEVENT_KILLS_FURNITURE,
-				CHEVENT_KILLS_MONSTERS,
-				CHEVENT_NOSKILLS,
-				CHEVENT_STRONG_TRAPS,
-				CHEVENT_ENUM_END
-			};
-
-			bool isActive() { return inUse; }
-			bool isActive(ChallengeEvents_t _eventType) { return inUse && (eventType == _eventType); }
-			std::string scenarioStr = "";
-			std::string lid = "";
-			int lid_version = -1;
-			Uint32 seed = 0;
-			std::string seed_word = "";
-			Uint32 lockedFlags = 0;
-			Uint32 setFlags = 0;
-			int classnum = -1;
-			int race = -1;
-			bool customBaseStats = false;
-			bool customAddStats = false;
-			Stat* baseStats = nullptr;
-			Stat* addStats = nullptr;
-			int eventType = -1;
-			int winLevel = -1;
-			int startLevel = -1;
-			int winCondition = -1;
-			int globalXPPercent = 100;
-			int globalGoldPercent = 100;
-			int playerWeightPercent = 100;
-			double playerSpeedMax = 12.5;
-			int numKills = -1;
-
-			void setup(std::string _scenario);
-			void reset();
-			bool loadScenario();
-			void applySettings();
-			void updateKillEvent(Entity* entity);
-		} challengeRun;
 	} currentSession;
-
 	bool isServerflagDisabledForCurrentMode(int i)
 	{
 		if ( getMode() == GAME_MODE_DEFAULT )
 		{
 			return false;
 		}
-		/*else if ( getMode() == GAME_MODE_TUTORIAL )
+		else if ( getMode() == GAME_MODE_TUTORIAL )
 		{
 			int flag = power(2, i);
 			switch ( flag )
@@ -2546,19 +2489,9 @@ public:
 					break;
 			}
 			return false;
-		}*/
-		else if ( getMode() == GAME_MODE_CUSTOM_RUN_ONESHOT
-			|| getMode() == GAME_MODE_CUSTOM_RUN )
-		{
-			if ( currentSession.challengeRun.lockedFlags & i )
-			{
-				return true;
-			}
-			return false;
 		}
 		return false;
 	}
-
 	class Tutorial_t
 	{
 		std::string currentMap = "";
@@ -2642,16 +2575,12 @@ public:
 
 		void readFromFile();
 		void writeToDocument();
-
-#if defined(LINUX)
-		const std::string tutorialScoresFilename = "/savegames/tutorial_scores_2.json";
-#else
-		const std::string tutorialScoresFilename = "/savegames/tutorial_scores.json";
-#endif
 		void writeToFile(rapidjson::Document& d)
 		{
 			std::string outputPath = outputdir;
-			outputPath.append(tutorialScoresFilename.c_str());
+			outputPath.append(PHYSFS_getDirSeparator());
+			std::string fileName = "savegames/tutorial_scores.json";
+			outputPath.append(fileName.c_str());
 
 			File* fp = FileIO::open(outputPath.c_str(), "wb");
 			if ( !fp )
@@ -2662,7 +2591,6 @@ public:
 			rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(os);
 			d.Accept(writer);
 			fp->write(os.GetString(), sizeof(char), os.GetSize());
-			fp->write("", sizeof(char), 1);
 
 			FileIO::close(fp);
 		}
@@ -2733,7 +2661,7 @@ class ItemTooltips_t
 		SPELL_TYPE_AREA,
 		SPELL_TYPE_SELF_SUSTAIN
 	};
-public:
+
 	enum SpellTagTypes : int
 	{
 		SPELL_TAG_DAMAGE,
@@ -2743,7 +2671,7 @@ public:
 		SPELL_TAG_CURE,
 		SPELL_TAG_BASIC_HIT_MESSAGE
 	};
-private:
+
 	struct spellItem_t
 	{
 		Sint32 id;
@@ -2809,11 +2737,10 @@ public:
 		void setColorFaintText(Uint32 color) { faintTextColor = color; }
 	};
 	void readItemsFromFile();
-	static const Uint32 kItemsJsonHash = 2419644190;
+	static const Uint32 kItemsJsonHash = 255104943;
 	static Uint32 itemsJsonHashRead;
 	void readItemLocalizationsFromFile(bool forceLoadBaseDirectory = false);
 	void readTooltipsFromFile(bool forceLoadBaseDirectory = false);
-	void readBookLocalizationsFromFile(bool forceLoadBaseDirectory = false);
 	std::vector<tmpItem_t> tmpItems;
 	std::map<Sint32, spellItem_t> spellItems;
 	std::map<std::string, ItemTooltip_t> tooltips;
@@ -2827,9 +2754,7 @@ public:
 		std::string name_unidentified = "";
 	};
 	std::map<std::string, ItemLocalization_t> itemNameLocalizations;
-	std::map<std::string, std::string> bookNameLocalizations;
 	std::map<std::string, std::string> spellNameLocalizations;
-	std::map<std::string, int> itemNameStringToItemID;
 	std::string defaultString = "";
 	char buf[2048];
 	bool autoReload = false;
@@ -2840,8 +2765,8 @@ public:
 	std::string& getItemPotionHarmAllyAdjective(Item& item);
 	std::string& getItemProficiencyName(int proficiency);
 	std::string& getItemSlotName(ItemEquippableSlot slotname);
-	std::string& getItemStatShortName(const char* attribute);
-	std::string& getItemStatFullName(const char* attribute);
+	std::string& getItemStatShortName(std::string& attribute);
+	std::string& getItemStatFullName(std::string& attribute);
 	std::string& getItemEquipmentEffectsForIconText(std::string& attribute);
 	std::string& getItemEquipmentEffectsForAttributesText(std::string& attribute);
 	std::string& getProficiencyLevelName(Sint32 proficiencyLevel);
@@ -3409,42 +3334,3 @@ struct LibCURL_t
 };
 extern LibCURL_t LibCURL;
 #endif
-
-struct EquipmentModelOffsets_t
-{
-	struct ModelOffset_t
-	{
-		real_t focalx = 0.0;
-		real_t focaly = 0.0;
-		real_t focalz = 0.0;
-		real_t scalex = 0.0;
-		real_t scaley = 0.0;
-		real_t scalez = 0.0;
-		real_t rotation = 0.0;
-		real_t pitch = 0.0;
-		int limbsIndex = 0;
-		bool oversizedMask = false;
-		bool expandToFitMask = false;
-
-		struct AdditionalOffset_t
-		{
-			real_t focalx = 0.0;
-			real_t focaly = 0.0;
-			real_t focalz = 0.0;
-			real_t scalex = 0.0;
-			real_t scaley = 0.0;
-			real_t scalez = 0.0;
-		};
-		std::map<int, AdditionalOffset_t> adjustToOversizeMask;
-		std::map<int, AdditionalOffset_t> adjustToExpandedHelm;
-	};
-	std::map<int, std::map<int, ModelOffset_t>> monsterModelsMap;
-	void readFromFile(std::string monsterName, int monsterType = NOTHING);
-	bool modelOffsetExists(int monster, int sprite);
-	bool expandHelmToFitMask(int monster, int helmSprite, int maskSprite);
-	bool maskHasAdjustmentForExpandedHelm(int monster, int helmSprite, int maskSprite);
-	ModelOffset_t::AdditionalOffset_t getExpandHelmOffset(int monster, int helmSprite, int maskSprite);
-	ModelOffset_t::AdditionalOffset_t getMaskOffsetForExpandHelm(int monster, int helmSprite, int maskSprite);
-	ModelOffset_t& getModelOffset(int monster, int sprite);
-};
-extern EquipmentModelOffsets_t EquipmentModelOffsets;

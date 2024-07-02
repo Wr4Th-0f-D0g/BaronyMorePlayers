@@ -197,6 +197,7 @@ void devilDie(Entity* my)
 			sendPacketSafe(net_sock, -1, net_packet, c - 1);
 		}
 	}
+
 	unsigned int x = 0;
 	unsigned int y = 0;
 	for ( y = map.height / 2 - 1; y < map.height / 2 + 2; y++ )

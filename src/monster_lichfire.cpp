@@ -47,8 +47,6 @@ void initLichFire(Entity* my, Stat* myStats)
 	}
 	if ( multiplayer != CLIENT && !MONSTER_INIT )
 	{
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-
 		if ( myStats != nullptr )
 		{
 			if ( !myStats->leader_uid )
@@ -57,7 +55,7 @@ void initLichFire(Entity* my, Stat* myStats)
 			}
 
 			// apply random stat increases if set in stat_shared.cpp or editor
-			setRandomMonsterStats(myStats, rng);
+			setRandomMonsterStats(myStats);
 
 			for ( int c = 1; c < MAXPLAYERS; ++c )
 			{
@@ -80,10 +78,10 @@ void initLichFire(Entity* my, Stat* myStats)
 			myStats->EFFECTS_TIMERS[EFF_LEVITATING] = 0;
 
 			// generates equipment and weapons if available from editor
-			createMonsterEquipment(myStats, rng);
+			createMonsterEquipment(myStats);
 
 			// create any custom inventory items from editor if available
-			createCustomInventory(myStats, customItemsToGenerate, rng);
+			createCustomInventory(myStats, customItemsToGenerate);
 
 			// count if any custom inventory items from editor
 			int customItems = countCustomItems(myStats); //max limit of 6 custom items per entity.
@@ -109,7 +107,7 @@ void initLichFire(Entity* my, Stat* myStats)
 			//give weapon
 			if ( myStats->weapon == NULL && myStats->EDITOR_ITEMS[ITEM_SLOT_WEAPON] == 1 )
 			{
-				myStats->weapon = newItem(CRYSTAL_SWORD, EXCELLENT, -5, 1, rng.rand(), false, NULL);
+				myStats->weapon = newItem(CRYSTAL_SWORD, EXCELLENT, -5, 1, local_rng.rand(), false, NULL);
 			}
 		}
 	}
@@ -195,6 +193,7 @@ void initLichFire(Entity* my, Stat* myStats)
 
 void lichFireDie(Entity* my)
 {
+	
 	if ( !my )
 	{
 		return;
@@ -254,6 +253,7 @@ void lichFireDie(Entity* my)
 		{
 			if ( entity == my || entity->sprite == 650 )
 			{
+
 				continue;
 			}
 			if ( entity->behavior == &actMonster )
@@ -270,7 +270,7 @@ void lichFireDie(Entity* my)
 			}
 		}
 	}
-
+	
 	spawnExplosion(my->x, my->y, my->z);
 	list_RemoveNode(my->mynode);
 	return;

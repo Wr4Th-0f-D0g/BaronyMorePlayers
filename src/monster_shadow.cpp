@@ -49,8 +49,6 @@ void initShadow(Entity* my, Stat* myStats)
 	}
 	if ( multiplayer != CLIENT && !MONSTER_INIT )
 	{
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-
 		if ( myStats != nullptr )
 		{
 			if ( !strncmp(map.name, "Underworld", 10) && currentlevel <= 7 && my->monsterStoreType == 0 )
@@ -63,13 +61,13 @@ void initShadow(Entity* my, Stat* myStats)
 			}
 
 			// apply random stat increases if set in stat_shared.cpp or editor
-			setRandomMonsterStats(myStats, rng);
+			setRandomMonsterStats(myStats);
 
 			// generate 6 items max, less if there are any forced items from boss variants
 			int customItemsToGenerate = ITEM_CUSTOM_SLOT_LIMIT;
 
 			const bool boss =
-			    rng.rand() % 50 == 0 &&
+			    local_rng.rand() % 50 == 0 &&
 			    !my->flags[USERFLAG2] &&
 			    !myStats->MISC_FLAGS[STAT_FLAG_DISABLE_MINIBOSS];
 
@@ -81,14 +79,14 @@ void initShadow(Entity* my, Stat* myStats)
 				my->sprite = MonsterData_t::getSpecialNPCBaseModel(*myStats);
 				myStats->sex = FEMALE;
 				my->monsterShadowDontChangeName = 1;
-				myStats->weapon = newItem(ARTIFACT_BOW, WORN, 0, 1, rng.rand(), false, nullptr);
+				myStats->weapon = newItem(ARTIFACT_BOW, WORN, 0, 1, local_rng.rand(), false, nullptr);
 
-				ItemType type = static_cast<ItemType>(QUIVER_SILVER + rng.rand() % 7);
-				int amount = 10 + rng.rand() % 11;
+				ItemType type = static_cast<ItemType>(QUIVER_SILVER + local_rng.rand() % 7);
+				int amount = 10 + local_rng.rand() % 11;
 				newItem(type, SERVICABLE, 0, amount, ITEM_GENERATED_QUIVER_APPEARANCE, true, &myStats->inventory);
 
-				type = static_cast<ItemType>(QUIVER_SILVER + rng.rand() % 7);
-				amount = 10 + rng.rand() % 11;
+				type = static_cast<ItemType>(QUIVER_SILVER + local_rng.rand() % 7);
+				amount = 10 + local_rng.rand() % 11;
 				newItem(type, SERVICABLE, 0, amount, ITEM_GENERATED_QUIVER_APPEARANCE, true, &myStats->inventory);
 			}
 			else if ( (boss || (*cvar_summonBosses && conductGameChallenges[CONDUCT_CHEATS_ENABLED])) && myStats->leader_uid == 0 )
@@ -101,7 +99,6 @@ void initShadow(Entity* my, Stat* myStats)
 				myStats->GOLD = 1000;
 				myStats->RANDOM_GOLD = 500;
 				myStats->LVL = 50; // >:U
-				newItem(MASK_PHANTOM, static_cast<Status>(WORN + rng.rand() % 3), -2 + rng.rand() % 5, 1, rng.rand(), false, &myStats->inventory);
 			}
 			else if ( my->monsterStoreType == 2 )
 			{
@@ -115,10 +112,10 @@ void initShadow(Entity* my, Stat* myStats)
 			myStats->EFFECTS_TIMERS[EFF_LEVITATING] = 0;
 
 			// generates equipment and weapons if available from editor
-			createMonsterEquipment(myStats, rng);
+			createMonsterEquipment(myStats);
 
 			// create any custom inventory items from editor if available
-			createCustomInventory(myStats, customItemsToGenerate, rng);
+			createCustomInventory(myStats, customItemsToGenerate);
 
 			// count if any custom inventory items from editor
 			int customItems = countCustomItems(myStats); //max limit of 6 custom items per entity.
@@ -137,10 +134,6 @@ void initShadow(Entity* my, Stat* myStats)
 				case 3:
 				case 2:
 				case 1:
-					if ( rng.rand() % 20 == 0 )
-					{
-						newItem(MASK_SPOOKY, static_cast<Status>(WORN + rng.rand() % 3), -2 + rng.rand() % 5, 1, rng.rand(), false, &myStats->inventory);
-					}
 					break;
 				default:
 					break;
@@ -264,7 +257,6 @@ void initShadow(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[SHADOW][6][0]; // 1.5
 	entity->focaly = limbs[SHADOW][6][1]; // 0
 	entity->focalz = limbs[SHADOW][6][2]; // -.5
@@ -285,7 +277,6 @@ void initShadow(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[SHADOW][7][0]; // 2
 	entity->focaly = limbs[SHADOW][7][1]; // 0
 	entity->focalz = limbs[SHADOW][7][2]; // 0
@@ -305,7 +296,6 @@ void initShadow(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[SHADOW][8][0]; // 0
 	entity->focaly = limbs[SHADOW][8][1]; // 0
 	entity->focalz = limbs[SHADOW][8][2]; // 4
@@ -328,7 +318,6 @@ void initShadow(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[SHADOW][9][0]; // 0
 	entity->focaly = limbs[SHADOW][9][1]; // 0
 	entity->focalz = limbs[SHADOW][9][2]; // -2
@@ -348,7 +337,6 @@ void initShadow(Entity* my, Stat* myStats)
 	entity->flags[PASSABLE] = true;
 	entity->flags[NOUPDATE] = true;
 	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
-	entity->noColorChangeAllyLimb = 1.0;
 	entity->focalx = limbs[SHADOW][10][0]; // 0
 	entity->focaly = limbs[SHADOW][10][1]; // 0
 	entity->focalz = limbs[SHADOW][10][2]; // .25
@@ -1262,7 +1250,7 @@ void shadowMoveBodyparts(Entity* my, Stat* myStats, double dist)
 				if ( multiplayer != CLIENT )
 				{
 					bool hasSteelHelm = false;
-					/*if ( myStats->helmet )
+					if ( myStats->helmet )
 					{
 						if ( myStats->helmet->type == STEEL_HELM
 							|| myStats->helmet->type == CRYSTAL_HELM
@@ -1270,7 +1258,7 @@ void shadowMoveBodyparts(Entity* my, Stat* myStats, double dist)
 						{
 							hasSteelHelm = true;
 						}
-					}*/
+					}
 					if ( myStats->mask == nullptr || myStats->EFFECTS[EFF_INVISIBLE] || wearingring || hasSteelHelm ) //TODO: isInvisible()?
 					{
 						entity->flags[INVISIBLE] = true;
@@ -1504,7 +1492,7 @@ void Entity::shadowSpecialAbility(bool initialMimic)
 	std::vector<int> skillsCanMimic;
 	for ( int i = 0; i < NUMPROFICIENCIES; ++i )
 	{
-		if ( targetStats->getModifiedProficiency(i) > myStats->getProficiency(i) )
+		if ( targetStats->PROFICIENCIES[i] > myStats->PROFICIENCIES[i] )
 		{
 			//Target is better, can mimic this proficiency.
 			skillsCanMimic.push_back(i);
@@ -1514,7 +1502,7 @@ void Entity::shadowSpecialAbility(bool initialMimic)
 	for ( int skillsMimicked = 0; skillsCanMimic.size() && skillsMimicked < numSkillsToMimic; ++skillsMimicked )
 	{
 		int choosen = local_rng.rand()%skillsCanMimic.size();
-		myStats->setProficiency(skillsCanMimic[choosen], targetStats->getModifiedProficiency(skillsCanMimic[choosen]));
+		myStats->PROFICIENCIES[skillsCanMimic[choosen]] = targetStats->PROFICIENCIES[skillsCanMimic[choosen]];
 
 		//messagePlayer(clientnum, "DEBUG: Shadow mimicked skill %d.", skillsCanMimic[choosen]);
 		skillsCanMimic.erase(skillsCanMimic.begin() + choosen); //No longer an eligible skill.

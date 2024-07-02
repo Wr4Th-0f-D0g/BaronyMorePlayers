@@ -80,11 +80,6 @@ void Entity::initMonster(int mySprite)
 	    focalx = limbs[monsterType][0][0];
 	    focaly = limbs[monsterType][0][1];
 	    focalz = limbs[monsterType][0][2];
-
-		if ( monsterType == MIMIC )
-		{
-			z = limbs[MIMIC][5][2];
-		}
 	} else {
 		if (arachnophobia_filter)
 		{
@@ -165,8 +160,7 @@ void Entity::initMonster(int mySprite)
 			monsterSpellAnimation = MONSTER_SPELLCAST_HUMANOID;
 			break;
 		case MIMIC:
-			monsterFootstepType = MONSTER_FOOTSTEP_NONE;
-			monsterSpellAnimation = MONSTER_SPELLCAST_NONE;
+			// unused
 			break;
 		case LICH:
 			monsterFootstepType = MONSTER_FOOTSTEP_NONE;

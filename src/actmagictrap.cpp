@@ -64,10 +64,9 @@ void Entity::actMagicTrapCeiling()
 	if ( !spellTrapInit )
 	{
 		spellTrapInit = 1;
-		auto& rng = entity_rng ? *entity_rng : local_rng;
 		if ( spellTrapType == -1 )
 		{
-			switch ( rng.rand() % 8 )
+			switch ( local_rng.rand() % 8 )
 			{
 				case 0:
 					spellTrapType = SPELL_FORCEBOLT;
@@ -175,8 +174,7 @@ void actMagicTrap(Entity* my)
 	if ( !MAGICTRAP_INIT )
 	{
 		MAGICTRAP_INIT = 1;
-		auto& rng = my->entity_rng ? *my->entity_rng : local_rng;
-		switch ( rng.rand() % 8 )
+		switch ( local_rng.rand() % 8 )
 		{
 			case 0:
 				MAGICTRAP_SPELL = SPELL_FORCEBOLT;

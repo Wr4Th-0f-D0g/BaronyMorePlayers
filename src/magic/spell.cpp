@@ -362,16 +362,13 @@ bool addSpell(int spell, int player, bool ignoreSkill)
 		else
 		{
 			// can't learn, already have it.
-			if ( !(spell == SPELL_FORCEBOLT && skillCapstoneUnlocked(player, PRO_SPELLCASTING)) )
-			{
-				messagePlayer(player, MESSAGE_STATUS, Language::get(439), new_spell->getSpellName());
-			}
+			messagePlayer(player, MESSAGE_STATUS, Language::get(439), new_spell->getSpellName());
 			spellDeconstructor((void*)new_spell);
 			return false;
 		}
 	}
-	int skillLVL = stats[player]->getModifiedProficiency(PRO_MAGIC) + statGetINT(stats[player], players[player]->entity);
-	if ( stats[player]->getModifiedProficiency(PRO_MAGIC) >= 100 )
+	int skillLVL = stats[player]->PROFICIENCIES[PRO_MAGIC] + statGetINT(stats[player], players[player]->entity);
+	if ( stats[player]->PROFICIENCIES[PRO_MAGIC] >= 100 )
 	{
 		skillLVL = 100;
 	}
@@ -630,7 +627,7 @@ bool spell_isChanneled(spell_t* spell)
 	return false;
 }
 
-real_t getBonusFromCasterOfSpellElement(Entity* caster, Stat* casterStats, spellElement_t* spellElement, int spellID)
+real_t getBonusFromCasterOfSpellElement(Entity* caster, Stat* casterStats, spellElement_t* spellElement)
 {
 	if ( caster && caster->behavior != &actPlayer )
 	{
@@ -642,71 +639,12 @@ real_t getBonusFromCasterOfSpellElement(Entity* caster, Stat* casterStats, spell
 		casterStats = caster->getStats();
 	}
 
-	real_t bonus = 0.0;
 	int INT = statGetINT(casterStats, caster);
 	if ( INT > 0 )
 	{
-		bonus += INT / 100.0;
+		return INT / 100.0;
 	}
-
-	if ( casterStats )
-	{
-		if ( casterStats->helmet )
-		{
-			if ( casterStats->helmet->type == HAT_MITER )
-			{
-				real_t hatBonus = 0.0;
-				if ( casterStats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(casterStats) )
-				{
-					hatBonus += (0.10 + (0.05 * abs(casterStats->helmet->beatitude)));
-				}
-				else
-				{
-					hatBonus -= ((0.10 * abs(casterStats->helmet->beatitude)));
-				}
-				if ( spellID == SPELL_HEALING || spellID == SPELL_EXTRAHEALING )
-				{
-					hatBonus *= 2;
-				}
-				bonus += hatBonus;
-			}
-			else if ( casterStats->helmet->type == HAT_HEADDRESS )
-			{
-				real_t hatBonus = 0.0;
-				if ( casterStats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(casterStats) )
-				{
-					hatBonus += (0.10 + (0.05 * abs(casterStats->helmet->beatitude)));
-				}
-				else
-				{
-					hatBonus -= ((0.10 * abs(casterStats->helmet->beatitude)));
-				}
-				if ( ItemTooltips.spellItems.find(spellID) != ItemTooltips.spellItems.end() )
-				{
-					auto& entry = ItemTooltips.spellItems[spellID];
-					if ( entry.spellTags.find(ItemTooltips_t::SpellTagTypes::SPELL_TAG_DAMAGE) != entry.spellTags.end() )
-					{
-						hatBonus *= 2;
-					}
-				}
-				bonus += hatBonus;
-			}
-			else if ( casterStats->helmet->type == HAT_CIRCLET
-				|| casterStats->helmet->type == HAT_CIRCLET_WISDOM )
-			{
-				if ( casterStats->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(casterStats) )
-				{
-					bonus += (0.05 + (0.05 * abs(casterStats->helmet->beatitude)));
-				}
-				else
-				{
-					bonus -= ((0.05 * abs(casterStats->helmet->beatitude)));
-				}
-			}
-		}
-	}
-	
-	return bonus;
+	return 0.0;
 }
 
 bool spellElement_isChanneled(spellElement_t* spellElement)

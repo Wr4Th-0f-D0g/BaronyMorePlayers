@@ -24,7 +24,6 @@
 
 bool loadMusic()
 {
-#ifdef USE_FMOD
     if ( NUMMINESMUSIC > 0 )
     {
         minesmusic = (FMOD::Sound**)malloc(sizeof(FMOD::Sound*) * NUMMINESMUSIC);
@@ -75,8 +74,7 @@ bool loadMusic()
         intromusic = (FMOD::Sound**)malloc(sizeof(FMOD::Sound*) * NUMINTROMUSIC);
         memset(intromusic, 0, sizeof(FMOD::Sound*) * NUMINTROMUSIC);
     }
-#endif
-
+	
     bool introMusicChanged;
 	physfsReloadMusic(introMusicChanged, true);
     return true;

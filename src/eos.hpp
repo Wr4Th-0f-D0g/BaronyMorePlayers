@@ -326,9 +326,7 @@ public:
 				std::string lobbyName = "";
 				std::string gameVersion = "";
 				std::string gameJoinKey = "";
-				std::string challengeLid = "";
 				Uint32 isLobbyLoadingSavedGame = 0;
-				Uint32 lobbyKey = 0;
 				Uint32 serverFlags = 0;
 				int numServerMods = 0;
 				bool modsDisableAchievements = false;
@@ -342,9 +340,7 @@ public:
 					lobbyName = "";
 					gameVersion = "";
 					gameJoinKey = "";
-					challengeLid = "";
 					isLobbyLoadingSavedGame = 0;
-					lobbyKey = 0;
 					serverFlags = 0;
 					numServerMods = 0;
 					modsDisableAchievements = false;
@@ -391,8 +387,6 @@ public:
 			FRIENDS_ONLY,
 			GAME_MAXPLAYERS,
 			GAME_MODS_DISABLE_ACHIEVEMENTS,
-			LOBBY_KEY,
-			CHALLENGE_LID,
 			ATTRIBUTE_TYPE_SIZE
 		};
 		const int kNumAttributes = ATTRIBUTE_TYPE_SIZE;

@@ -39,7 +39,7 @@ bool item_PotionWater(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -413,7 +413,7 @@ bool item_PotionBooze(Item*& item, Entity* entity, Entity* usedBy, bool shouldCo
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -564,7 +564,7 @@ bool item_PotionJuice(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -749,7 +749,7 @@ bool item_PotionSickness(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -858,7 +858,7 @@ bool item_PotionConfusion(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -953,7 +953,7 @@ bool item_PotionCureAilment(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1083,7 +1083,7 @@ bool item_PotionBlindness(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1128,20 +1128,22 @@ bool item_PotionBlindness(Item*& item, Entity* entity, Entity* usedBy)
 		return true;
 	}
 
-	int duration = item->potionGetEffectDurationRandom(entity, stats);
+	if ( entity->behavior == &actMonster && !entity->isBossMonster() )
+	{
+		entity->monsterReleaseAttackTarget();
+	}
+	messagePlayer(player, MESSAGE_HINT, Language::get(765));
+	stats->EFFECTS[EFF_BLIND] = true;
 	if ( player >= 0 )
 	{
-		duration = std::max(300, stats->EFFECTS_TIMERS[EFF_BLIND] - (entity->getPER() + entity->getCON()) * 5);
+		stats->EFFECTS_TIMERS[EFF_BLIND] = item->potionGetEffectDurationRandom(entity, stats);
+		stats->EFFECTS_TIMERS[EFF_BLIND] = std::max(300, stats->EFFECTS_TIMERS[EFF_BLIND] - (entity->getPER() + entity->getCON()) * 5);
 	}
-
-	if ( entity->setEffect(EFF_BLIND, true, duration, true) )
+	else
 	{
-		if ( entity->behavior == &actMonster && !entity->isBossMonster() )
-		{
-			entity->monsterReleaseAttackTarget();
-		}
-		messagePlayer(player, MESSAGE_HINT, Language::get(765));
+		entity->setEffect(EFF_BLIND, true, item->potionGetEffectDurationRandom(entity, stats), true);
 	}
+	serverUpdateEffects(player);
 
 	// play drink sound
 	playSoundEntity(entity, 52, 64);
@@ -1162,7 +1164,7 @@ bool item_PotionInvisibility(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1253,7 +1255,7 @@ bool item_PotionLevitation(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1333,7 +1335,7 @@ bool item_PotionSpeed(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1432,7 +1434,7 @@ bool item_PotionStrength(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1482,14 +1484,16 @@ bool item_PotionStrength(Item*& item, Entity* entity, Entity* usedBy)
 	{
 		messagePlayer(player, MESSAGE_HINT, Language::get(2900));
 		//Cursed effect blinds you.
-		int duration = item->potionGetCursedEffectDurationRandom(entity, stats);
+		messagePlayer(player, MESSAGE_HINT, Language::get(765));
+		stats->EFFECTS[EFF_BLIND] = true;
 		if ( player >= 0 )
 		{
-			duration = std::max(300, stats->EFFECTS_TIMERS[EFF_BLIND] - (entity->getPER() + entity->getCON()) * 5);
+			stats->EFFECTS_TIMERS[EFF_BLIND] = item->potionGetCursedEffectDurationRandom(entity, stats);
+			stats->EFFECTS_TIMERS[EFF_BLIND] = std::max(300, stats->EFFECTS_TIMERS[EFF_BLIND] - (entity->getPER() + entity->getCON()) * 5);
 		}
-		if ( entity->setEffect(EFF_BLIND, true, duration, true) )
+		else
 		{
-			messagePlayer(player, MESSAGE_HINT, Language::get(765));
+			entity->setEffect(EFF_BLIND, true, item->potionGetCursedEffectDurationRandom(entity, stats), true);
 		}
 	}
 	else
@@ -1519,7 +1523,7 @@ bool item_PotionAcid(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1613,7 +1617,7 @@ bool item_PotionUnstableStorm(Item*& item, Entity* entity, Entity* usedBy, Entit
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1769,7 +1773,7 @@ bool item_PotionParalysis(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -1852,7 +1856,7 @@ bool item_PotionHealing(Item*& item, Entity* entity, Entity* usedBy, bool should
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -2000,7 +2004,7 @@ bool item_PotionExtraHealing(Item*& item, Entity* entity, Entity* usedBy, bool s
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -2147,7 +2151,7 @@ bool item_PotionRestoreMagic(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -2272,7 +2276,7 @@ Entity* item_PotionPolymorph(Item*& item, Entity* entity, Entity* usedBy)
 		Stat* usedByStats = usedBy->getStats();
 		if ( usedByStats )
 		{
-			skillLVL = usedByStats->getModifiedProficiency(PRO_ALCHEMY) / 20;
+			skillLVL = usedByStats->PROFICIENCIES[PRO_ALCHEMY] / 20;
 		}
 	}
 
@@ -2343,7 +2347,7 @@ void onScrollUseAppraisalIncrease(Item* item, int player)
 	if ( !item ) { return; }
 	if ( !item->identified && players[player] && players[player]->isLocalPlayer() )
 	{
-		if ( stats[player]->getProficiency(PRO_APPRAISAL) < SKILL_LEVEL_BASIC )
+		if ( stats[player]->PROFICIENCIES[PRO_APPRAISAL] < SKILL_LEVEL_BASIC )
 		{
 			if ( stats[player] && players[player]->entity )
 			{
@@ -3534,7 +3538,7 @@ void item_ScrollDestroyArmor(Item* item, int player)
 	messagePlayer(player, MESSAGE_INVENTORY, Language::get(848));
 
 	int armornum = 0;
-	int tryIndex = 1 + local_rng.rand() % 7;
+	int tryIndex = 1 + local_rng.rand() % 6;
 	int startIndex = tryIndex;
 	bool breakloop = false;
 	while ( !armor && !breakloop )
@@ -3592,15 +3596,8 @@ void item_ScrollDestroyArmor(Item* item, int player)
 					armornum = 6;
 					break;
 				}
-			case 7:
-				if ( stats[player]->mask != nullptr )
-				{
-					armor = stats[player]->mask;
-					armornum = 7;
-					break;
-				}
 				++tryIndex;
-				if ( tryIndex > 7 )
+				if ( tryIndex > 6 )
 				{
 					// loop back around.
 					tryIndex = 1;
@@ -4299,7 +4296,7 @@ void item_Food(Item*& item, int player)
 	int oldcount;
 	int pukeChance;
 
-	if ( player < 0 || player >= MAXPLAYERS || !stats[player] )
+	if ( !stats[player] )
 	{
 		return;
 	}
@@ -4426,26 +4423,6 @@ void item_Food(Item*& item, int player)
 		pukeChance = 99; // make it so you will vomit
 	}
 
-	if ( item->beatitude < 0 && item->type == FOOD_CREAMPIE )
-	{
-		messagePlayer(player, MESSAGE_COMBAT | MESSAGE_STATUS, Language::get(909));
-		if ( players[player] && players[player]->entity && players[player]->entity->setEffect(EFF_MESSY, true, 600, false) )
-		{
-			messagePlayer(player, MESSAGE_COMBAT | MESSAGE_STATUS, Language::get(910));
-		}
-		else
-		{
-			if ( stats[player]->mask && stats[player]->mask->type == MASK_HAZARD_GOGGLES )
-			{
-				if ( !(players[player]->entity->behavior == &actPlayer && players[player]->entity->effectShapeshift != NOTHING) )
-				{
-					messagePlayerColor(player, MESSAGE_STATUS, makeColorRGB(0, 255, 0), Language::get(6088));
-				}
-			}
-		}
-		consumeItem(item, player);
-		return;
-	}
 	if (((item->beatitude < 0 && item->type != FOOD_CREAMPIE) || (local_rng.rand() % pukeChance == 0)) && pukeChance < 100)
 	{
 		if (players[player] && players[player]->entity && !(svFlags & SV_FLAG_HUNGER))
@@ -4467,35 +4444,25 @@ void item_Food(Item*& item, int player)
 		}
 		if ( stats[player] && players[player] && players[player]->entity )
 		{
-			if ( players[player]->entity->entityCanVomit() )
+			if ( stats[player]->type != SKELETON
+				&& players[player]->entity->effectShapeshift == NOTHING
+				&& stats[player]->type != AUTOMATON )
 			{
-				players[player]->entity->char_gonnavomit = 40 + local_rng.rand() % 10;
+				players[player]->entity->skill[26] = 40 + local_rng.rand() % 10;
 			}
 		}
 		consumeItem(item, player);
 		return;
 	}
-
-	real_t foodMult = 1.0;
-	//int bonusFoodHeal = 0;
-	if ( stats[player]->helmet && stats[player]->helmet->type == HAT_CHEF )
+	if ( item->beatitude < 0 && item->type == FOOD_CREAMPIE )
 	{
-		if ( stats[player]->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(stats[player]) )
-		{
-			if ( svFlags & SV_FLAG_HUNGER )
-			{
-				foodMult += 0.2 + abs(stats[player]->helmet->beatitude) * 0.1;
-			}
-			else
-			{
-				foodMult += 0.5 + abs(stats[player]->helmet->beatitude) * 0.25;
-			}
-		}
-		else
-		{
-			foodMult = 0.6 - abs(stats[player]->helmet->beatitude) * 0.1;
-		}
-		foodMult = std::max(0.2, foodMult);
+		messagePlayer(player, MESSAGE_COMBAT | MESSAGE_STATUS, Language::get(909));
+		messagePlayer(player, MESSAGE_COMBAT | MESSAGE_STATUS, Language::get(910));
+		stats[player]->EFFECTS[EFF_MESSY] = true;
+		stats[player]->EFFECTS_TIMERS[EFF_MESSY] = 600; // ten seconds
+		serverUpdateEffects(player);
+		consumeItem(item, player);
+		return;
 	}
 
 	// replenish nutrition points
@@ -4540,13 +4507,13 @@ void item_Food(Item*& item, int player)
 				hungerIncrease = 10;
 				break;
 		}
-		stats[player]->HUNGER += hungerIncrease * foodMult;
+		stats[player]->HUNGER += hungerIncrease;
 	}
 	else
 	{
 		if (players[player] && players[player]->entity)
 		{
-			players[player]->entity->modHP(std::max(1, (int)(5 * foodMult)));
+			players[player]->entity->modHP(5);
 			messagePlayer(player, MESSAGE_WORLD, Language::get(911));
 
 
@@ -4586,7 +4553,6 @@ void item_Food(Item*& item, int player)
 					default:
 						break;
 				}
-				manaRegenPercent *= foodMult;
 				int manaAmount = stats[player]->MAXMP * manaRegenPercent;
 				players[player]->entity->modMP(manaAmount);
 			}
@@ -4765,9 +4731,11 @@ void item_FoodTin(Item*& item, int player)
 
 		if ( stats[player] && players[player] && players[player]->entity )
 		{
-			if ( players[player]->entity->entityCanVomit() )
+			if ( stats[player]->type != SKELETON
+				&& players[player]->entity->effectShapeshift == NOTHING
+				&& stats[player]->type != AUTOMATON )
 			{
-				players[player]->entity->char_gonnavomit = 40 + local_rng.rand() % 10;
+				players[player]->entity->skill[26] = 40 + local_rng.rand() % 10;
 			}
 		}
 		consumeItem(item, player);
@@ -4784,33 +4752,10 @@ void item_FoodTin(Item*& item, int player)
 		buffDuration -= local_rng.rand() % ((buffDuration / 4) + 1); // 75-100% duration
 	}
 
-	real_t foodMult = 1.0;
-	//int bonusFoodHeal = 0;
-	if ( stats[player]->helmet && stats[player]->helmet->type == HAT_CHEF )
-	{
-		if ( stats[player]->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(stats[player]) )
-		{
-			if ( svFlags & SV_FLAG_HUNGER )
-			{
-				foodMult += 0.2 + abs(stats[player]->helmet->beatitude) * 0.1;
-			}
-			else
-			{
-				foodMult += 0.5 + abs(stats[player]->helmet->beatitude) * 0.25;
-			}
-		}
-		else
-		{
-			foodMult = 0.6 - abs(stats[player]->helmet->beatitude) * 0.1;
-		}
-		foodMult = std::min(1.0, foodMult);
-		foodMult = std::max(0.2, foodMult);
-	}
-
 	// replenish nutrition points
 	if (svFlags & SV_FLAG_HUNGER)
 	{
-		stats[player]->HUNGER += 600 * foodMult;
+		stats[player]->HUNGER += 600;
 		stats[player]->EFFECTS[EFF_HP_REGEN] = hpBuff;
 		stats[player]->EFFECTS[EFF_MP_REGEN] = mpBuff;
 		stats[player]->EFFECTS_TIMERS[EFF_HP_REGEN] = buffDuration;
@@ -4820,11 +4765,11 @@ void item_FoodTin(Item*& item, int player)
 	{
 		if (players[player] && players[player]->entity)
 		{
-			players[player]->entity->modHP(std::max(1, (int)(5 * foodMult)));
+			players[player]->entity->modHP(5);
 			messagePlayer(player, MESSAGE_WORLD, Language::get(911));
 			if ( stats[player]->playerRace == RACE_INSECTOID && stats[player]->appearance == 0 )
 			{
-				real_t manaRegenPercent = 0.6 * foodMult;
+				real_t manaRegenPercent = 0.6;
 				int manaAmount = stats[player]->MAXMP * manaRegenPercent;
 				players[player]->entity->modMP(manaAmount);
 			}
@@ -5359,10 +5304,10 @@ void item_FoodAutomaton(Item*& item, int player)
 	if ( item->beatitude < 0 && item->type == FOOD_CREAMPIE )
 	{
 		messagePlayer(player, MESSAGE_STATUS | MESSAGE_COMBAT, Language::get(909));
-		if ( players[player]->entity && players[player]->entity->setEffect(EFF_MESSY, true, 600, false) )
-		{
-			messagePlayer(player, MESSAGE_COMBAT | MESSAGE_STATUS, Language::get(910));
-		}
+		messagePlayer(player, MESSAGE_STATUS | MESSAGE_COMBAT, Language::get(910));
+		stats[player]->EFFECTS[EFF_MESSY] = true;
+		stats[player]->EFFECTS_TIMERS[EFF_MESSY] = 600; // ten seconds
+		serverUpdateEffects(player);
 		consumeItem(item, player);
 		return;
 	}
@@ -5676,9 +5621,9 @@ void updateHungerMessages(Entity* my, Stat* myStats, Item* eaten)
 			else
 			{
 				messagePlayer(my->skill[2], MESSAGE_STATUS, Language::get(917));
-				if ( my->entityCanVomit() )
+				if ( myStats->type != SKELETON && myStats->type != AUTOMATON )
 				{
-					my->char_gonnavomit = 40 + local_rng.rand() % 10;
+					my->skill[26] = 40 + local_rng.rand() % 10;
 				}
 			}
 		}

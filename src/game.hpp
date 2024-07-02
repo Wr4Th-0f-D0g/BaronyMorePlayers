@@ -25,11 +25,12 @@
 
 // REMEMBER TO CHANGE THIS WITH EVERY NEW OFFICIAL VERSION!!!
 #ifdef NINTENDO
-static const char VERSION[] = "v4.2.1";
+static const char VERSION[] = "v4.1.1";
 #else
-static const char VERSION[] = "v4.2.1";
+static const char VERSION[] = "mp1.3.2";
 #endif
 #define GAME_CODE
+
 
 class Entity;
 
@@ -89,7 +90,6 @@ extern bool loadingmap, loadingconfig;
 extern int startfloor;
 extern bool skipintro;
 extern Uint32 uniqueGameKey;
-extern Uint32 uniqueLobbyKey;
 extern bool arachnophobia_filter;
 extern bool colorblind_lobby;
 
@@ -217,6 +217,7 @@ void initGameDatafilesAsync(bool moddedReload);
 void deinitGame();
 void handleButtons(void);
 void gameLogic(void);
+
 
 // behavior function prototypes:
 void actAnimator(Entity* my);

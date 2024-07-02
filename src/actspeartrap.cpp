@@ -17,7 +17,6 @@
 #include "net.hpp"
 #include "collision.hpp"
 #include "player.hpp"
-#include "mod_tools.hpp"
 
 /*-------------------------------------------------------------------------------
 
@@ -151,36 +150,19 @@ void actSpearTrap(Entity* my)
 										}
 									}
 								}
-
-								int damage = 50;
-								if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_STRONG_TRAPS) )
+								playSoundEntity(entity, 28, 64);
+								spawnGib(entity);
+								entity->modHP(-50);
+								if ( stats->HP <= 0 )
 								{
-									damage *= 1.5;
-								}
-								int trapResist = entity->getFollowerBonusTrapResist();
-								if ( trapResist != 0 )
-								{
-									real_t mult = std::max(0.0, 1.0 - (trapResist / 100.0));
-									damage *= mult;
-								}
-
-								if ( damage > 0 )
-								{
-									playSoundEntity(entity, 28, 64);
-									spawnGib(entity);
-									entity->modHP(-damage);
-
-									if ( stats->HP <= 0 )
+									if ( stats->type == AUTOMATON )
 									{
-										if ( stats->type == AUTOMATON && entity->behavior == &actPlayer )
-										{
-											entity->playerAutomatonDeathCounter = TICKS_PER_SECOND * 5; // set the death timer to immediately pop for players.
-										}
+										entity->playerAutomatonDeathCounter = TICKS_PER_SECOND * 5; // set the death timer to immediately pop for players.
 									}
-									// set obituary
-									entity->setObituary(Language::get(1507));
-									stats->killer = KilledBy::TRAP_SPIKE;
 								}
+								// set obituary
+								entity->setObituary(Language::get(1507));
+						        stats->killer = KilledBy::TRAP_SPIKE;
 							}
 						}
 					}

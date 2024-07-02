@@ -26,6 +26,7 @@
 #include "ui/MainMenu.hpp"
 #include "colors.hpp"
 
+
 /*-------------------------------------------------------------------------------
 
 	act*
@@ -119,13 +120,6 @@ void actLadder(Entity* my)
 						if ( LADDER_SECRET_ENTRANCE )
 						{
 							skipLevelsOnLoad = -1; // don't skip a regular level anymore. still skip if in underworld.
-						}
-						if ( currentlevel == 0 )
-						{
-							if ( gameModeManager.currentSession.challengeRun.isActive(GameModeManager_t::CurrentSession_t::ChallengeRun_t::CHEVENT_SHOPPING_SPREE) )
-							{
-								skipLevelsOnLoad = 0;
-							}
 						}
 					}
 					if ( LADDER_SECRET_ENTRANCE )
@@ -407,8 +401,10 @@ void actWinningPortal(Entity* my)
 	double dist;
 	int i, c;
 
+
 	if ( my->ticks == 1 )
 	{
+		
 		my->createWorldUITooltip();
 		memset(mpPokeCooldown, 0, sizeof(mpPokeCooldown));
 	}
@@ -498,7 +494,7 @@ void actWinningPortal(Entity* my)
 	{
 		return;
 	}
-
+	
 	// step through portal
 	for (i = 0; i < MAXPLAYERS; i++)
 	{
@@ -636,12 +632,15 @@ void actWinningPortal(Entity* my)
 	                }
 	            }
 
+
                 movie = true;
 				pauseGame(2, false);
 				return;
 			}
 		}
 	}
+
+
 }
 
 void actExpansionEndGamePortal(Entity* my)
@@ -1410,7 +1409,7 @@ void actCustomPortal(Entity* my)
 							}
 							else
 							{
-								tutorialLevels.at(number).completionTime = std::min(tutorialLevels.at(number).completionTime, completionTime);
+								//tutorialLevels.at(number).completionTime = std::min(tutorialLevels.at(number).completionTime, completionTime);
 							}
 							achievementObserver.updateGlobalStat(
 								std::min(STEAM_GSTAT_TUTORIAL1_COMPLETED - 1 + number, static_cast<int>(STEAM_GSTAT_TUTORIAL10_COMPLETED)));

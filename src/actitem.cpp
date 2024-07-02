@@ -448,8 +448,26 @@ void actItem(Entity* my)
 			my->light = addLight(my->x / 16, my->y / 16, "lootbag_pink");
 		}
 		break;
-	case 1210: // white
+	case 1210: // blue
 		if ( !my->light )
+		{
+			my->light = addLight(my->x / 16, my->y / 16, "lootbag_blue");
+		}
+		break;
+	case 1247: // orange
+		if (!my->light)
+		{
+			my->light = addLight(my->x / 16, my->y / 16, "lootbag_orange");
+		}
+		break;
+	case 1248: // pink2
+		if (!my->light)
+		{
+			my->light = addLight(my->x / 16, my->y / 16, "lootbag_pink2");
+		}
+		break;
+	case 1249: // white
+		if (!my->light)
 		{
 			my->light = addLight(my->x / 16, my->y / 16, "lootbag_white");
 		}

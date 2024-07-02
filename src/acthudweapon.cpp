@@ -1212,10 +1212,6 @@ void actHudWeapon(Entity* my)
 
 									// set delay before crossbow can fire again
 									throwGimpTimer = 40;
-									if ( stats[HUDWEAPON_PLAYERNUM]->weapon->type == CROSSBOW )
-									{
-										throwGimpTimer *= rangedAttackGetSpeedModifier(stats[HUDWEAPON_PLAYERNUM]);
-									}
 
 									HUDWEAPON_CHOP = CROSSBOW_CHOP_RELOAD_START;
 									HUDWEAPON_CROSSBOW_RELOAD_ANIMATION = CROSSBOW_ANIM_SHOOT;
@@ -2498,24 +2494,10 @@ void actHudWeapon(Entity* my)
 	}
 	else if ( HUDWEAPON_CHOP == 13 ) // tool placing
 	{
-		real_t speedFactor = 1.0;
-		if ( stats[HUDWEAPON_PLAYERNUM]->mask && stats[HUDWEAPON_PLAYERNUM]->mask->type == MASK_TECH_GOGGLES )
-		{
-			bool cursedItemIsBuff = shouldInvertEquipmentBeatitude(stats[HUDWEAPON_PLAYERNUM]);
-			if ( stats[HUDWEAPON_PLAYERNUM]->mask->beatitude >= 0 || cursedItemIsBuff )
-			{
-				speedFactor = std::min(speedFactor + (1 + abs(stats[HUDWEAPON_PLAYERNUM]->mask->beatitude)) * 0.5, 3.0);
-			}
-			else
-			{
-				speedFactor = std::max(speedFactor - abs(stats[HUDWEAPON_PLAYERNUM]->mask->beatitude) * 0.5, 0.5);
-			}
-		}
-
 		int targetZ = -4;
 		real_t targetRoll = -PI / 2;
-		real_t rateY = .1 * speedFactor;
-		real_t rateRoll = .25 * speedFactor;
+		real_t rateY = .1;
+		real_t rateRoll = .25;
 		int targetY = 1;
 		if ( !swingweapon )
 		{
@@ -2524,17 +2506,17 @@ void actHudWeapon(Entity* my)
 		real_t targetPitch = 0.f;
 
 		HUDWEAPON_YAW = 0;
-		HUDWEAPON_PITCH -= .25 * speedFactor;
+		HUDWEAPON_PITCH -= .25;
 		if ( HUDWEAPON_PITCH < targetPitch )
 		{
 			HUDWEAPON_PITCH = targetPitch;
 		}
-		HUDWEAPON_MOVEX -= .35 * speedFactor;
+		HUDWEAPON_MOVEX -= .35;
 		if ( HUDWEAPON_MOVEX < 0 )
 		{
 			HUDWEAPON_MOVEX = 0;
 		}
-		HUDWEAPON_MOVEZ -= .75 * speedFactor;
+		HUDWEAPON_MOVEZ -= .75;
 		if ( HUDWEAPON_MOVEZ < targetZ )
 		{
 			HUDWEAPON_MOVEZ = targetZ;
@@ -2563,7 +2545,7 @@ void actHudWeapon(Entity* my)
 						&& !playerCanSpawnMoreTinkeringBots(stats[HUDWEAPON_PLAYERNUM]) )
 					{
 						throwGimpTimer = TICKS_PER_SECOND / 2; // limits how often you can throw objects
-						if ( stats[HUDWEAPON_PLAYERNUM]->getModifiedProficiency(PRO_LOCKPICKING) >= SKILL_LEVEL_LEGENDARY )
+						if ( stats[HUDWEAPON_PLAYERNUM]->PROFICIENCIES[PRO_LOCKPICKING] >= SKILL_LEVEL_LEGENDARY )
 						{
 							messagePlayer(HUDWEAPON_PLAYERNUM, MESSAGE_MISC, Language::get(3884));
 						}
@@ -2623,38 +2605,24 @@ void actHudWeapon(Entity* my)
 	}
 	else if ( HUDWEAPON_CHOP == 15 )     // return from second swing
 	{
-		real_t speedFactor = 1.0;
-		if ( stats[HUDWEAPON_PLAYERNUM]->mask && stats[HUDWEAPON_PLAYERNUM]->mask->type == MASK_TECH_GOGGLES )
-		{
-			bool cursedItemIsBuff = shouldInvertEquipmentBeatitude(stats[HUDWEAPON_PLAYERNUM]);
-			if ( stats[HUDWEAPON_PLAYERNUM]->mask->beatitude >= 0 || cursedItemIsBuff )
-			{
-				speedFactor = std::min(speedFactor + (1 + abs(stats[HUDWEAPON_PLAYERNUM]->mask->beatitude)) * 0.5, 3.0);
-			}
-			else
-			{
-				speedFactor = std::max(speedFactor - abs(stats[HUDWEAPON_PLAYERNUM]->mask->beatitude) * 0.5, 0.5);
-			}
-		}
-
-		HUDWEAPON_MOVEX -= .25 * speedFactor;
+		HUDWEAPON_MOVEX -= .25;
 		if ( HUDWEAPON_MOVEX < 0 )
 		{
 			HUDWEAPON_MOVEX = 0;
 		}
-		HUDWEAPON_MOVEY -= .25 * speedFactor;
+		HUDWEAPON_MOVEY -= .25;
 		if ( HUDWEAPON_MOVEY < 0 )
 		{
 			HUDWEAPON_MOVEY = 0;
 		}
-		HUDWEAPON_ROLL += .05 * speedFactor;
+		HUDWEAPON_ROLL += .05;
 
-		HUDWEAPON_YAW -= .05 * speedFactor;
+		HUDWEAPON_YAW -= .05;
 		if ( HUDWEAPON_YAW < -.1 )
 		{
 			HUDWEAPON_YAW = -.1;
 		}
-		HUDWEAPON_MOVEZ += .35 * speedFactor;
+		HUDWEAPON_MOVEZ += .35;
 		if ( HUDWEAPON_MOVEZ > 0 )
 		{
 			HUDWEAPON_MOVEZ = 0;
@@ -2755,11 +2723,6 @@ void actHudWeapon(Entity* my)
 		}
 		if ( stats[HUDWEAPON_PLAYERNUM]->weapon && stats[HUDWEAPON_PLAYERNUM]->weapon->type == HEAVY_CROSSBOW )
 		{
-			real_t reloadSpeed = 1.0;
-			if ( rangedAttackGetSpeedModifier(stats[HUDWEAPON_PLAYERNUM]) < 0.125 )
-			{
-				reloadSpeed = 6.0;
-			}
 			if ( HUDWEAPON_MOVEZ > 1 )
 			{
 				HUDWEAPON_MOVEZ -= .1; // just in case we're overshooting from another animation or something move faster.
@@ -2769,7 +2732,7 @@ void actHudWeapon(Entity* my)
 				if ( rangedWeaponUseQuiverOnAttack(stats[HUDWEAPON_PLAYERNUM]) )
 				{
 				// we fired a quiver shot, the crossbow will be lower here so move faster.
-					HUDWEAPON_MOVEZ -= .02 * reloadSpeed;
+					HUDWEAPON_MOVEZ -= .02;
 					if ( HUDWEAPON_MOVEZ < 0.5 )
 					{
 						HUDWEAPON_CROSSBOW_RELOAD_ANIMATION = CROSSBOW_ANIM_RELOAD_END;
@@ -2781,7 +2744,7 @@ void actHudWeapon(Entity* my)
 				}
 				else
 				{
-					HUDWEAPON_MOVEZ -= .01 * reloadSpeed;
+					HUDWEAPON_MOVEZ -= .01;
 					if ( HUDWEAPON_MOVEZ < 0.25 )
 					{
 						HUDWEAPON_CROSSBOW_RELOAD_ANIMATION = CROSSBOW_ANIM_RELOAD_END;

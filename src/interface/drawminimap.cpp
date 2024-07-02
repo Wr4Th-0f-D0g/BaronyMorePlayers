@@ -158,6 +158,12 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 		}
 		else
 		{
+			int var = entity->sprite;
+			bool var2 = false;
+			if (var == 1206 || var == 1207 || var == 1208 || var == 129 || var == 1210 || var == 1247 || var == 1248 || var == 1249)
+			{
+				var2 = true;
+			}
 			if ( entity->skill[28] > 0 ) // mechanism
 			{
 				if ( entity->behavior == &actCustomPortal
@@ -167,31 +173,18 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 					continue;
 				}
 			}
-			if ( entity->behavior == &actMonster )
+			if ( entity->behavior == &actMonster && entity->monsterAllyIndex < 0 )
 			{
-				if ( entity->monsterAllyIndex < 0 )
-				{
-					entityPointsOfInterest.push_back(entity);
-				}
-				else
-				{
-					for ( int i = 0; i < MAXPLAYERS; ++i )
-					{
-						if ( achievementObserver.playerAchievements[i].bountyTargets.find(entity->getUID())
-							!= achievementObserver.playerAchievements[i].bountyTargets.end() )
-						{
-							entityPointsOfInterest.push_back(entity);
-							break;
-						}
-					}
-				}
+				entityPointsOfInterest.push_back(entity);
 			}
 			else if ( entity->isBoulderSprite() )
 			{
 				entityPointsOfInterest.push_back(entity);
 			}
-			else if ( entity->behavior == &actItem && entity->sprite >= items[TOOL_PLAYER_LOOT_BAG].index &&
-				entity->sprite < (items[TOOL_PLAYER_LOOT_BAG].index + items[TOOL_PLAYER_LOOT_BAG].variations) )
+
+			else if ( entity->behavior == &actItem && var2 == true)
+				/*items[TOOL_PLAYER_LOOT_BAG].index &&
+				entity->sprite < (items[TOOL_PLAYER_LOOT_BAG].index + items[TOOL_PLAYER_LOOT_BAG].variations) )*/
 			{
 				entityPointsOfInterest.push_back(entity);
 			}
@@ -383,51 +376,19 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
         imgGet->drawColor(&src, dest, viewport, color);
 	};
 
-	auto drawBountySkull = [](real_t x, real_t y, real_t size, SDL_Rect rect, Uint32 color) {
-		const int mapGCD = std::max(map.width, map.height);
-		const int xmin = ((int)map.width - mapGCD) / 2;
-		const int ymin = ((int)map.height - mapGCD) / 2;
-		const real_t unitX = (real_t)rect.w / (real_t)mapGCD;
-		const real_t unitY = (real_t)rect.h / (real_t)mapGCD;
-		x = (x - xmin) * unitX + rect.x;
-		y = (y - ymin) * unitY + rect.y;
-
-		auto imgGet = Image::get("*images/ui/HUD/death_skull1.png");
-
-		const real_t sx = unitX * (getMinimapZoom() / 100.0) * size;
-		const real_t sy = unitY * (getMinimapZoom() / 100.0) * size;
-
-		const SDL_Rect src{
-			0,
-			0,
-			imgGet->getSurf()->w,
-			imgGet->getSurf()->h,
-		};
-		const SDL_Rect dest{
-			(int)(x - sx / 2.0),
-			(int)(y - sy / 2.0),
-			(int)(sx),
-			(int)(sy),
-		};
-		const SDL_Rect viewport{ 0, 0, Frame::virtualScreenX, Frame::virtualScreenY };
-		imgGet->drawColor(&src, dest, viewport, color);
-	};
-
-	static ConsoleVariable<float> cvar_skullbountyscale("/minimap_skullbountyscale", 1.5);
-
 	// draw special points of interest (exits, items, revealed monsters, etc)
-	for ( auto entity : entityPointsOfInterest )
+	for (auto entity : entityPointsOfInterest)
 	{
-		if ( entity->sprite == 161 || (entity->sprite >= 254 && entity->sprite < 258)
-			|| entity->behavior == &actCustomPortal )   // ladder or portal models
+		if (entity->sprite == 161 || (entity->sprite >= 254 && entity->sprite < 258)
+			|| entity->behavior == &actCustomPortal)   // ladder or portal models
 		{
-			if ( entity->x >= 0 && entity->y >= 0 && entity->x < map.width << 4 && entity->y < map.height << 4 )
+			if (entity->x >= 0 && entity->y >= 0 && entity->x < map.width << 4 && entity->y < map.height << 4)
 			{
 				int x = floor(entity->x / 16);
 				int y = floor(entity->y / 16);
-				if ( minimap[y][x] || (entity->entityShowOnMap > 0 && !(entity->behavior == &actCustomPortal)) )
+				if (minimap[y][x] || (entity->entityShowOnMap > 0 && !(entity->behavior == &actCustomPortal)))
 				{
-					if ( ticks % 40 - ticks % 20 )
+					if (ticks % 40 - ticks % 20)
 					{
 						// exit
 						drawCircleMesh((real_t)x + 0.5, (real_t)y + 0.5, (real_t)1.0, rect, makeColor(255, 0, 0, 255));
@@ -437,67 +398,19 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 		}
 		else
 		{
-			if ( entity->behavior == &actMonster )
-			{
-				for ( int i = 0; i < MAXPLAYERS; ++i )
-				{
-					//if ( !players[i]->isLocalPlayer() ) { continue; }
-					if ( client_disconnected[i] ) { continue; }
-					if ( !players[i]->entity ) { continue; }
-
-					bool hat = multiplayer != CLIENT && stats[i]->helmet && stats[i]->helmet->type == HAT_BOUNTYHUNTER;
-					if ( multiplayer == CLIENT )
-					{
-						if ( !players[i]->isLocalPlayer() )
-						{
-							hat = achievementObserver.playerAchievements[i].wearingBountyHat;
-						}
-						else
-						{
-							hat = stats[i]->helmet && stats[i]->helmet->type == HAT_BOUNTYHUNTER;
-						}
-					}
-					if ( hat )
-					{
-						if ( achievementObserver.playerAchievements[i].bountyTargets.find(entity->getUID())
-							!= achievementObserver.playerAchievements[i].bountyTargets.end() )
-						{
-							int x = floor(entity->x / 16);
-							int y = floor(entity->y / 16);
-
-							Uint32 color = playerColor(i, colorblind_lobby, false);
-							Uint8 r, g, b, a;
-							getColor(color, &r, &g, &b, &a);
-							const int glowRate = TICKS_PER_SECOND * 2;
-							const int intensity = 4;
-							if ( ticks % (glowRate) < (glowRate / 2) )
-							{
-								a = (255 - (glowRate / 2) * intensity) + (ticks % (glowRate)) * intensity;
-							}
-							else
-							{
-								a = 255 - ((ticks % (glowRate)) - (glowRate / 2)) * intensity;
-							}
-							color = makeColor(r, g, b, a);
-							drawBountySkull((real_t)x + 0.5, (real_t)y + 0.5, *cvar_skullbountyscale, rect, color);
-							break;
-						}
-					}
-				}
-			}
-			if ( entity->behavior == &actMonster && entity->monsterAllyIndex < 0 )
+			if (entity->behavior == &actMonster && entity->monsterAllyIndex < 0)
 			{
 				bool warningEffect = false;
 				{
-					if ( drawingSharedMap )
+					if (drawingSharedMap)
 					{
-						for ( int i = 0; i < MAXPLAYERS; ++i )
+						for (int i = 0; i < MAXPLAYERS; ++i)
 						{
-							if ( !players[i]->isLocalPlayer() || client_disconnected[i] ) { continue; }
+							if (!players[i]->isLocalPlayer() || client_disconnected[i]) { continue; }
 
-							if ( (players[i] && players[i]->entity
+							if ((players[i] && players[i]->entity
 								&& players[i]->entity->creatureShadowTaggedThisUid == entity->getUID())
-								|| (entity->getStats() && entity->getStats()->EFFECTS[EFF_SHADOW_TAGGED]) )
+								|| (entity->getStats() && entity->getStats()->EFFECTS[EFF_SHADOW_TAGGED]))
 							{
 								warningEffect = true;
 								int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
@@ -510,9 +423,9 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 					else
 					{
 						const int i = player;
-						if ( (players[i] && players[i]->entity
+						if ((players[i] && players[i]->entity
 							&& players[i]->entity->creatureShadowTaggedThisUid == entity->getUID())
-							|| (entity->getStats() && entity->getStats()->EFFECTS[EFF_SHADOW_TAGGED]) )
+							|| (entity->getStats() && entity->getStats()->EFFECTS[EFF_SHADOW_TAGGED]))
 						{
 							warningEffect = true;
 							int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
@@ -521,39 +434,39 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 						}
 					}
 
-					if ( !warningEffect )
+					if (!warningEffect)
 					{
-						if ( drawingSharedMap )
+						if (drawingSharedMap)
 						{
-							for ( int i = 0; i < MAXPLAYERS; ++i )
+							for (int i = 0; i < MAXPLAYERS; ++i)
 							{
-								if ( !players[i]->isLocalPlayer() || client_disconnected[i] ) { continue; }
+								if (!players[i]->isLocalPlayer() || client_disconnected[i]) { continue; }
 
-								if ( (stats[i]->ring && stats[i]->ring->type == RING_WARNING)
-									|| (entity->entityShowOnMap > 0) )
+								if ((stats[i]->ring && stats[i]->ring->type == RING_WARNING)
+									|| (entity->entityShowOnMap > 0))
 								{
 									int beatitude = 0;
-									if ( stats[i]->ring && stats[i]->ring->type == RING_WARNING )
+									if (stats[i]->ring && stats[i]->ring->type == RING_WARNING)
 									{
 										beatitude = stats[i]->ring->beatitude;
 										// invert for succ/incubus
-										if ( beatitude < 0 && shouldInvertEquipmentBeatitude(stats[i]) )
+										if (beatitude < 0 && shouldInvertEquipmentBeatitude(stats[i]))
 										{
 											beatitude = abs(stats[i]->ring->beatitude);
 										}
 									}
 
 									bool doEffect = false;
-									if ( entity->entityShowOnMap > 0 )
+									if (entity->entityShowOnMap > 0)
 									{
 										doEffect = true;
 									}
-									else if ( stats[i]->ring && players[i] && players[i]->entity
-										&& entityDist(players[i]->entity, entity) < 16.0 * std::max(3, (11 + 5 * beatitude)) )
+									else if (stats[i]->ring && players[i] && players[i]->entity
+										&& entityDist(players[i]->entity, entity) < 16.0 * std::max(3, (11 + 5 * beatitude)))
 									{
 										doEffect = true;
 									}
-									if ( doEffect )
+									if (doEffect)
 									{
 										int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
 										int y = std::min<int>(std::max<int>(0, entity->y / 16), map.height - 1);
@@ -567,31 +480,31 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 						else
 						{
 							const int i = player;
-							if ( (stats[i]->ring && stats[i]->ring->type == RING_WARNING)
-									|| (entity->entityShowOnMap > 0) )
+							if ((stats[i]->ring && stats[i]->ring->type == RING_WARNING)
+								|| (entity->entityShowOnMap > 0))
 							{
 								int beatitude = 0;
-								if ( stats[i]->ring && stats[i]->ring->type == RING_WARNING )
+								if (stats[i]->ring && stats[i]->ring->type == RING_WARNING)
 								{
 									beatitude = stats[i]->ring->beatitude;
 									// invert for succ/incubus
-									if ( beatitude < 0 && shouldInvertEquipmentBeatitude(stats[i]) )
+									if (beatitude < 0 && shouldInvertEquipmentBeatitude(stats[i]))
 									{
 										beatitude = abs(stats[i]->ring->beatitude);
 									}
 								}
 
 								bool doEffect = false;
-								if ( entity->entityShowOnMap > 0 )
+								if (entity->entityShowOnMap > 0)
 								{
 									doEffect = true;
 								}
-								else if ( stats[i]->ring && players[i] && players[i]->entity
-									&& entityDist(players[i]->entity, entity) < 16.0 * std::max(3, (11 + 5 * beatitude)) )
+								else if (stats[i]->ring && players[i] && players[i]->entity
+									&& entityDist(players[i]->entity, entity) < 16.0 * std::max(3, (11 + 5 * beatitude)))
 								{
 									doEffect = true;
 								}
-								if ( doEffect )
+								if (doEffect)
 								{
 									int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
 									int y = std::min<int>(std::max<int>(0, entity->y / 16), map.height - 1);
@@ -601,21 +514,21 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 							}
 						}
 					}
-					if ( !warningEffect )
+					if (!warningEffect)
 					{
-						if ( drawingSharedMap )
+						if (drawingSharedMap)
 						{
-							for ( int i = 0; i < MAXPLAYERS; ++i )
+							for (int i = 0; i < MAXPLAYERS; ++i)
 							{
-								if ( !players[i]->isLocalPlayer() || client_disconnected[i] ) { continue; }
+								if (!players[i]->isLocalPlayer() || client_disconnected[i]) { continue; }
 
-								if ( stats[i]->shoes != NULL )
+								if (stats[i]->shoes != NULL)
 								{
-									if ( stats[i]->shoes->type == ARTIFACT_BOOTS )
+									if (stats[i]->shoes->type == ARTIFACT_BOOTS)
 									{
-										if ( (abs(entity->vel_x) > 0.1 || abs(entity->vel_y) > 0.1)
+										if ((abs(entity->vel_x) > 0.1 || abs(entity->vel_y) > 0.1)
 											&& players[i] && players[i]->entity
-											&& entityDist(players[i]->entity, entity) < 16.0 * 20 )
+											&& entityDist(players[i]->entity, entity) < 16.0 * 20)
 										{
 											entity->entityShowOnMap = std::max(entity->entityShowOnMap, TICKS_PER_SECOND * 5);
 											int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
@@ -631,13 +544,13 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 						else
 						{
 							const int i = player;
-							if ( stats[i]->shoes != NULL )
+							if (stats[i]->shoes != NULL)
 							{
-								if ( stats[i]->shoes->type == ARTIFACT_BOOTS )
+								if (stats[i]->shoes->type == ARTIFACT_BOOTS)
 								{
-									if ( (abs(entity->vel_x) > 0.1 || abs(entity->vel_y) > 0.1)
+									if ((abs(entity->vel_x) > 0.1 || abs(entity->vel_y) > 0.1)
 										&& players[i] && players[i]->entity
-										&& entityDist(players[i]->entity, entity) < 16.0 * 20 )
+										&& entityDist(players[i]->entity, entity) < 16.0 * 20)
 									{
 										entity->entityShowOnMap = std::max(entity->entityShowOnMap, TICKS_PER_SECOND * 5);
 										int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
@@ -651,22 +564,27 @@ void drawMinimap(const int player, SDL_Rect rect, bool drawingSharedMap)
 					}
 				}
 			}
-			else if ( entity->isBoulderSprite() )
+			else if (entity->isBoulderSprite())
 			{
 				int x = std::min<int>(std::max<int>(0, entity->x / 16), map.width - 1);
 				int y = std::min<int>(std::max<int>(0, entity->y / 16), map.height - 1);
-				if ( minimap[y][x] == 1 || minimap[y][x] == 2 )
+				if (minimap[y][x] == 1 || minimap[y][x] == 2)
 				{
 					// boulder
 					drawCircleMesh((real_t)x + 0.5, (real_t)y + 0.5, (real_t)1.0, rect, makeColor(191, 63, 0, 255));
 				}
 			}
-			else if ( entity->behavior == &actItem && entity->sprite >= items[TOOL_PLAYER_LOOT_BAG].index &&
-				entity->sprite < (items[TOOL_PLAYER_LOOT_BAG].index + items[TOOL_PLAYER_LOOT_BAG].variations) )
+			else if (entity->behavior == &actItem && entity->sprite == 1207 || 1208 || 1209 || 1210 || 1211 || 1248 || 1249 || 1250)
+				/*entity->sprite < (items[TOOL_PLAYER_LOOT_BAG].index + items[TOOL_PLAYER_LOOT_BAG].variations))
+				*/
 			{
 				real_t skullx = std::min<real_t>(std::max(0.0, entity->x / 16), map.width - 1);
 				real_t skully = std::min<real_t>(std::max(0.0, entity->y / 16), map.height - 1);
-				int playerOwner = entity->sprite - items[TOOL_PLAYER_LOOT_BAG].index;
+				int playerOwner = entity->sprite - 1206;//items[TOOL_PLAYER_LOOT_BAG].index;
+				if (playerOwner >= 5)
+				{
+					playerOwner -= 36;
+				}
 				Uint32 color = playerColor(playerOwner, colorblind_lobby, false);
 
 				if ( colorblind_lobby )

@@ -43,7 +43,6 @@ char lobbyVersion[MAX_STEAM_LOBBIES][64];
 void* lobbyIDs[MAX_STEAM_LOBBIES] = { NULL };
 int lobbyPlayers[MAX_STEAM_LOBBIES] = { 0 };
 int lobbyNumMods[MAX_STEAM_LOBBIES] = { 0 };
-char lobbyChallengeRun[MAX_STEAM_LOBBIES][64];
 bool lobbyModDisableAchievements[MAX_STEAM_LOBBIES] = { false };
 bool steamAwaitingLobbyCreation = false;
 
@@ -411,7 +410,6 @@ std::string SteamServerClientWrapper::requestAuthTicket()
 
 		authTicket = "";
 		char hexBuf[32];
-		memset(hexBuf, 0, sizeof(hexBuf));
 		for ( int i = 0; i < cubTicket; ++i )
 		{
 			snprintf(hexBuf, sizeof(hexBuf), "%02hhx", buf[i]);
@@ -818,7 +816,7 @@ void steamAchievement(const char* achName)
 	}
 	else
 	{
-		if ( !gameModeManager.allowsStatisticsOrAchievements(achName, -1) )
+		if ( !gameModeManager.allowsStatisticsOrAchievements() )
 		{
 #ifndef DEBUG_ACHIEVEMENTS
 			return;
@@ -945,7 +943,7 @@ void steamStatisticUpdate(int statisticNum, ESteamStatTypes type, int value)
 	}
 	else
 	{
-		if ( !gameModeManager.allowsStatisticsOrAchievements(nullptr, statisticNum) )
+		if ( !gameModeManager.allowsStatisticsOrAchievements() )
 		{
 #ifndef DEBUG_ACHIEVEMENTS
 			return;
@@ -1010,8 +1008,6 @@ void steamStatisticUpdate(int statisticNum, ESteamStatTypes type, int value)
 				case STEAM_STAT_GUERILLA_RADIO:
 				case STEAM_STAT_ITS_A_LIVING:
 				case STEAM_STAT_FASCIST:
-				case STEAM_STAT_I_NEEDED_THAT:
-				case STEAM_STAT_DUNGEONSEED:
 					g_SteamStats[statisticNum].m_iValue =
 						std::min(g_SteamStats[statisticNum].m_iValue, steamStatAchStringsAndMaxVals[statisticNum].second);
 					break;
@@ -1130,29 +1126,6 @@ void steamStatisticUpdate(int statisticNum, ESteamStatTypes type, int value)
 						std::min(g_SteamStats[statisticNum].m_iValue, steamStatAchStringsAndMaxVals[statisticNum].second);
 					indicateProgress = false;
 					break;
-				case STEAM_STAT_DAPPER_1:
-				case STEAM_STAT_DAPPER_2:
-				case STEAM_STAT_DAPPER_3:
-					g_SteamStats[statisticNum].m_iValue =
-						std::min((Uint32)g_SteamStats[statisticNum].m_iValue, (Uint32)steamStatAchStringsAndMaxVals[statisticNum].second);
-					indicateProgress = false;
-					break;
-				case STEAM_STAT_DAPPER:
-					g_SteamStats[statisticNum].m_iValue =
-						std::min(g_SteamStats[statisticNum].m_iValue, steamStatAchStringsAndMaxVals[statisticNum].second);
-					if ( g_SteamStats[statisticNum].m_iValue == steamStatAchStringsAndMaxVals[statisticNum].second )
-					{
-						indicateProgress = true;
-					}
-					else if ( oldValue == g_SteamStats[statisticNum].m_iValue )
-					{
-						indicateProgress = false;
-					}
-					else
-					{
-						indicateProgress = true;
-					}
-					break;
 				case STEAM_STAT_DIPLOMA:
 				case STEAM_STAT_EXTRA_CREDIT:
 					g_SteamStats[statisticNum].m_iValue =
@@ -1222,7 +1195,7 @@ void steamStatisticUpdateClient(int player, int statisticNum, ESteamStatTypes ty
 	}
 	else
 	{
-		if ( !gameModeManager.allowsStatisticsOrAchievements(nullptr, statisticNum) )
+		if ( !gameModeManager.allowsStatisticsOrAchievements() )
 		{
 #ifndef DEBUG_ACHIEVEMENTS
 			return;
@@ -1398,7 +1371,6 @@ void steamIndicateStatisticProgress(int statisticNum, ESteamStatTypes type)
 			// below are 10 max value
 			case STEAM_STAT_TAKE_THIS_OUTSIDE:
 			case STEAM_STAT_SPICY:
-			case STEAM_STAT_I_NEEDED_THAT:
 				if ( !achievementUnlocked(steamStatAchStringsAndMaxVals[statisticNum].first.c_str()) )
 				{
 					if ( iVal == 1 || (iVal > 0 && iVal % 2 == 0) )
@@ -1410,21 +1382,10 @@ void steamIndicateStatisticProgress(int statisticNum, ESteamStatTypes type)
 				break;
 			case STEAM_STAT_DIPLOMA:
 			case STEAM_STAT_EXTRA_CREDIT:
-			case STEAM_STAT_DUNGEONSEED:
 				if ( !achievementUnlocked(steamStatAchStringsAndMaxVals[statisticNum].first.c_str()) )
 				{
 					indicateAchievementProgressAndUnlock(steamStatAchStringsAndMaxVals[statisticNum].first.c_str(),
 						iVal, steamStatAchStringsAndMaxVals[statisticNum].second);
-				}
-				break;
-			case STEAM_STAT_DAPPER:
-				if ( !achievementUnlocked(steamStatAchStringsAndMaxVals[statisticNum].first.c_str()) )
-				{
-					if ( iVal >= 5 && iVal % 5 == 0 )
-					{
-						indicateAchievementProgressAndUnlock(steamStatAchStringsAndMaxVals[statisticNum].first.c_str(),
-							iVal, steamStatAchStringsAndMaxVals[statisticNum].second);
-					}
 				}
 				break;
 			default:
@@ -1521,7 +1482,6 @@ void steam_OnLobbyMatchListCallback( void* pCallback, bool bIOFailure )
 		const int numPlayers = SteamMatchmaking()->GetNumLobbyMembers(lobby);
 		const char* svNumMods = SteamMatchmaking()->GetLobbyData(lobby, "svNumMods");
 		const char* svModsDisableAchievements = SteamMatchmaking()->GetLobbyData(lobby, "svModDisableAch");
-		const char* lobbyChallengeRun = SteamMatchmaking()->GetLobbyData(lobby, "challengelid");
 
 		if ( lobbyName && lobbyName[0] && lobbyVersion && lobbyVersion[0] && numPlayers )
 		{
@@ -1530,7 +1490,6 @@ void steam_OnLobbyMatchListCallback( void* pCallback, bool bIOFailure )
 			lobbyPlayers[iLobby] = numPlayers;
 			lobbyNumMods[iLobby] = atoi(svNumMods);
 			lobbyModDisableAchievements[iLobby] = atoi(svModsDisableAchievements);
-			stringCopyUnsafe(::lobbyChallengeRun[iLobby], lobbyChallengeRun, sizeof(::lobbyChallengeRun[iLobby]));
 		}
 		else
 		{
@@ -1737,19 +1696,6 @@ void steam_OnLobbyCreated( void* pCallback, bool bIOFailure )
 		snprintf(loadingsavegameChar, 15, "%d", loadingsavegame);
 		SteamMatchmaking()->SetLobbyData(*lobby, "loadingsavegame", loadingsavegameChar);
 
-		char loadinglobbykeyChar[16];
-		snprintf(loadinglobbykeyChar, 15, "%d", loadinglobbykey);
-		SteamMatchmaking()->SetLobbyData(*lobby, "lobbyuniquekey", loadinglobbykeyChar);
-
-		if ( gameModeManager.currentSession.challengeRun.isActive() )
-		{
-			SteamMatchmaking()->SetLobbyData(*lobby, "challengelid", gameModeManager.currentSession.challengeRun.lid.c_str());
-		}
-		else
-		{
-			SteamMatchmaking()->SetLobbyData(*lobby, "challengelid", "");
-		}
-
 		char svNumMods[16];
 		snprintf(svNumMods, 15, "%d", Mods::numCurrentModsLoaded);
 		SteamMatchmaking()->SetLobbyData(*lobby, "svNumMods", svNumMods);
@@ -1857,25 +1803,18 @@ bool processLobbyInvite(void* lobbyToConnectTo)
 	const char* pchLoadingSaveGame = SteamMatchmaking()->GetLobbyData(*lobby, "loadingsavegame");
 	assert(pchLoadingSaveGame && pchLoadingSaveGame[0]);
 
-	const char* pchLobbyUniqueKey = SteamMatchmaking()->GetLobbyData(*lobby, "lobbyuniquekey");
-	assert(pchLoadingSaveGame && pchLoadingSaveGame[0]);
-
 	SaveGameInfo savegameinfo;
 	if (loadingsavegame) {
 		savegameinfo = getSaveGameInfo(false);
 	}
 
 	Uint32 saveGameKey = atoi(pchLoadingSaveGame);      // get the savegame key of the server.
-	Uint32 lobbyUniqueKey = pchLobbyUniqueKey ? atoi(pchLobbyUniqueKey) : 0;      // get the lobby key of the server.
-	Uint32 gameKey = savegameinfo.gamekey;   // maybe we were already loading a compatible save.
-	Uint32 lobbyKey = savegameinfo.lobbykey;
-	if ( gameKey && saveGameKey && saveGameKey == gameKey && lobbyUniqueKey == lobbyKey ) {
+	Uint32 gameKey = getSaveGameUniqueGameKey(savegameinfo);   // maybe we were already loading a compatible save.
+	if ( gameKey && saveGameKey && saveGameKey == gameKey) {
 		loadingsavegame = saveGameKey; // save game matches! load game.
-		loadinglobbykey = lobbyUniqueKey;
 	}
 	else if (!saveGameKey) {
 		loadingsavegame = 0; // cancel our savegame load. when we enter the lobby, our character will be flushed.
-		loadinglobbykey = 0;
 	}
 	else {
 		// try reload from your other savefiles since this didn't match the default savegameIndex.
@@ -1883,7 +1822,7 @@ bool processLobbyInvite(void* lobbyToConnectTo)
 		for (int c = 0; c < SAVE_GAMES_MAX; ++c) {
 			auto info = getSaveGameInfo(false, c);
 			if (info.game_version != -1) {
-				if (info.gamekey == saveGameKey && info.lobbykey == lobbyUniqueKey ) {
+				if (info.gamekey == saveGameKey ) {
 					savegameCurrentFileIndex = c;
 					foundSave = true;
 					break;
@@ -1892,7 +1831,6 @@ bool processLobbyInvite(void* lobbyToConnectTo)
 		}
 		if (foundSave) {
 			loadingsavegame = saveGameKey;
-			loadinglobbykey = lobbyUniqueKey;
 		} else {
 			printlog("warning: received invitation to lobby with which you have no compatible save game.\n");
 			return false;

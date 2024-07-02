@@ -54,7 +54,6 @@ list_t booksRead;
 bool usedClass[NUMCLASSES] = {0};
 bool usedRace[NUMRACES] = { 0 };
 Uint32 loadingsavegame = 0;
-Uint32 loadinglobbykey = 0;
 bool achievementBrawlerMode = false;
 bool achievementPenniless = false;
 bool achievementRangedMode[MAXPLAYERS] = { 0 };
@@ -124,7 +123,7 @@ score_t* scoreConstructor(int player)
 	score->stats->HUNGER = stats[player]->HUNGER;
 	for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 	{
-		score->stats->setProficiency(c, stats[player]->getProficiency(c));
+		score->stats->PROFICIENCIES[c] = stats[player]->PROFICIENCIES[c];
 	}
 	for ( int c = 0; c < NUMEFFECTS; c++ )
 	{
@@ -358,7 +357,7 @@ int totalScore(score_t* score)
 
 	for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 	{
-		amount += score->stats->getProficiency(c);
+		amount += score->stats->PROFICIENCIES[c];
 	}
 	for ( int c = 0; c < NUMMONSTERS; c++ )
 	{
@@ -373,15 +372,7 @@ int totalScore(score_t* score)
 	}
 
 	amount += score->dungeonlevel * 500;
-	if ( score->victory == 100 )
-	{
-		amount += 2 * 20000;
-	}
-	else if ( score->victory == 101 )
-	{
-		amount += 5 * 20000;
-	}
-	else if ( score->victory >= 3 )
+	if ( score->victory >= 3 )
 	{
 		amount += 3 * 20000;
 	}
@@ -481,7 +472,7 @@ void loadScore(score_t* score)
 
 	for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 	{
-		stats[0]->setProficiency(c, score->stats->getProficiency(c));
+		stats[0]->PROFICIENCIES[c] = score->stats->PROFICIENCIES[c];
 	}
 	for ( int c = 0; c < NUMEFFECTS; c++ )
 	{
@@ -727,8 +718,7 @@ void saveAllScores(const std::string& scoresfilename)
 		fp->write(&score->stats->HUNGER, sizeof(Sint32), 1);
 		for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 		{
-			auto val = score->stats->getProficiency(c);
-			fp->write(&val, sizeof(Sint32), 1);
+			fp->write(&score->stats->PROFICIENCIES[c], sizeof(Sint32), 1);
 		}
 		for ( int c = 0; c < NUMEFFECTS; c++ )
 		{
@@ -936,7 +926,7 @@ void loadAllScores(const std::string& scoresfilename)
 	}
 	versionNumber = atoi(versionStr); // convert from string to int.
 	printlog("notice: '%s' version number %d", scoresfilename.c_str(), versionNumber);
-	if ( versionNumber < 200 || versionNumber > 999 )
+	if ( versionNumber < 100 || versionNumber > 999 )
 	{
 		// if version number less than v2.0.0, or more than 3 digits, abort and rebuild scores file.
 		printlog("error: '%s' is corrupt!\n", scoresfilename.c_str());
@@ -969,7 +959,7 @@ void loadAllScores(const std::string& scoresfilename)
 	}
 	for ( int c = 0; c < NUMCLASSES; c++ )
 	{
-		if ( versionNumber < 300 )
+		if ( versionNumber < 100 )
 		{
 			if ( c < 10 )
 			{
@@ -980,7 +970,7 @@ void loadAllScores(const std::string& scoresfilename)
 				usedClass[c] = false;
 			}
 		}
-		else if ( versionNumber < 323 )
+		else if ( versionNumber < 100 )
 		{
 			if ( c < 13 )
 			{
@@ -999,7 +989,7 @@ void loadAllScores(const std::string& scoresfilename)
 
 	for ( int c = 0; c < NUMRACES; c++ )
 	{
-		if ( versionNumber <= 325 )
+		if ( versionNumber <= 100 )
 		{
 			// don't read race info.
 			usedRace[c] = false;
@@ -1032,7 +1022,6 @@ void loadAllScores(const std::string& scoresfilename)
 		}
 		// Stat set to 0 as monster type not needed, values will be overwritten by the savegame data
 		score->stats = new Stat(0);
-		score->totalscore = -1;
 		if ( !score->stats )
 		{
 			printlog( "failed to allocate memory for new stat!\n" );
@@ -1042,7 +1031,7 @@ void loadAllScores(const std::string& scoresfilename)
 		node->deconstructor = &scoreDeconstructor;
 		node->size = sizeof(score_t);
 
-		if ( versionNumber < 300 )
+		if ( versionNumber < 100 )
 		{
 			// legacy nummonsters
 			for ( int c = 0; c < NUMMONSTERS; c++ )
@@ -1057,7 +1046,7 @@ void loadAllScores(const std::string& scoresfilename)
 				}
 			}
 		}
-		else if ( versionNumber < 325 )
+		else if ( versionNumber < 100 )
 		{
 			// legacy nummonsters
 			for ( int c = 0; c < NUMMONSTERS; c++ )
@@ -1087,7 +1076,7 @@ void loadAllScores(const std::string& scoresfilename)
 		fp->read(&score->stats->type, sizeof(Monster), 1);
 		fp->read(&score->stats->sex, sizeof(sex_t), 1);
 		fp->read(&score->stats->appearance, sizeof(Uint32), 1);
-		if ( versionNumber >= 323 )
+		if ( versionNumber >= 100 )
 		{
 			score->stats->playerRace = ((score->stats->appearance & 0xFF00) >> 8);
 			score->stats->appearance = (score->stats->appearance & 0xFF);
@@ -1129,18 +1118,16 @@ void loadAllScores(const std::string& scoresfilename)
 		fp->read(&score->stats->HUNGER, sizeof(Sint32), 1);
 		for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 		{
-			if ( versionNumber < 323 && c >= PRO_UNARMED )
+			if ( versionNumber < 100 && c >= PRO_UNARMED )
 			{
-				score->stats->setProficiency(c, 0);
+				score->stats->PROFICIENCIES[c] = 0;
 			}
 			else
 			{
-				Sint32 val = 0;
-				fp->read(&val, sizeof(Sint32), 1);
-				score->stats->setProficiency(c, val);
+				fp->read(&score->stats->PROFICIENCIES[c], sizeof(Sint32), 1);
 			}
 		}
-		if ( versionNumber < 300 )
+		if ( versionNumber < 100 )
 		{
 			// legacy effects
 			for ( int c = 0; c < NUMEFFECTS; c++ )
@@ -1157,7 +1144,7 @@ void loadAllScores(const std::string& scoresfilename)
 				}
 			}
 		}
-		else if ( versionNumber < 302 )
+		else if ( versionNumber < 100 )
 		{
 			for ( int c = 0; c < NUMEFFECTS; c++ )
 			{
@@ -1173,27 +1160,11 @@ void loadAllScores(const std::string& scoresfilename)
 				}
 			}
 		}
-		else if ( versionNumber <= 323 )
+		else if ( versionNumber <= 100 )
 		{
 			for ( int c = 0; c < NUMEFFECTS; c++ )
 			{
 				if ( c < 32 )
-				{
-					fp->read(&score->stats->EFFECTS[c], sizeof(bool), 1);
-					fp->read(&score->stats->EFFECTS_TIMERS[c], sizeof(Sint32), 1);
-				}
-				else
-				{
-					score->stats->EFFECTS[c] = false;
-					score->stats->EFFECTS_TIMERS[c] = 0;
-				}
-			}
-		}
-		else if ( versionNumber <= 411 )
-		{
-			for ( int c = 0; c < NUMEFFECTS; c++ )
-			{
-				if ( c < 40 )
 				{
 					fp->read(&score->stats->EFFECTS[c], sizeof(bool), 1);
 					fp->read(&score->stats->EFFECTS_TIMERS[c], sizeof(Sint32), 1);
@@ -1214,7 +1185,7 @@ void loadAllScores(const std::string& scoresfilename)
 			}
 		}
 
-		if ( versionNumber >= 310 )
+		if ( versionNumber >= 100 )
 		{
 			for ( int c = 0; c < NUM_CONDUCT_CHALLENGES; ++c )
 			{
@@ -1612,8 +1583,7 @@ int saveGameOld(int saveIndex)
 		fp->write(&stats[player]->HUNGER, sizeof(Sint32), 1);
 		for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 		{
-			Sint32 val = stats[player]->getProficiency(c);
-			fp->write(&val, sizeof(Sint32), 1);
+			fp->write(&stats[player]->PROFICIENCIES[c], sizeof(Sint32), 1);
 		}
 		for ( int c = 0; c < NUMEFFECTS; c++ )
 		{
@@ -1971,8 +1941,7 @@ int saveGameOld(int saveIndex)
 
 					for ( int j = 0; j < NUMPROFICIENCIES; j++ )
 					{
-						Sint32 val = followerStats->getProficiency(j);
-						fp->write(&val, sizeof(Sint32), 1);
+						fp->write(&followerStats->PROFICIENCIES[j], sizeof(Sint32), 1);
 					}
 					for ( int j = 0; j < NUMEFFECTS; j++ )
 					{
@@ -2287,7 +2256,7 @@ int loadGameOld(int player, int saveIndex)
 	fp->read(&clientnum, sizeof(Uint32), 1);
 	fp->read(&mapseed, sizeof(Uint32), 1);
 	fp->read(&currentlevel, sizeof(Uint32), 1);
-	if ( versionNumber >= 323 )
+	if ( versionNumber >= 100 )
 	{
 		loadedHash = (currentlevel & 0xFFFFFF00) >> 8;
 		currentlevel = currentlevel & 0xFF;
@@ -2298,7 +2267,7 @@ int loadGameOld(int player, int saveIndex)
 	fp->read(&conductFoodless, sizeof(bool), 1);
 	fp->read(&conductVegetarian, sizeof(bool), 1);
 	fp->read(&conductIlliterate, sizeof(bool), 1);
-	if ( versionNumber >= 310 )
+	if ( versionNumber >= 100 )
 	{
 		for ( int c = 0; c < NUM_CONDUCT_CHALLENGES; ++c )
 		{
@@ -2309,7 +2278,7 @@ int loadGameOld(int player, int saveIndex)
 			fp->read(&gameStatistics[c], sizeof(Sint32), 1);
 		}
 	}
-	if ( versionNumber >= 335 )
+	if ( versionNumber >= 100 )
 	{
 		gameModeManager.currentSession.saveServerFlags();
 		if ( multiplayer == CLIENT )
@@ -2354,7 +2323,7 @@ int loadGameOld(int player, int saveIndex)
 	            }
 
 				clientLearnedAlchemyRecipes[c].clear();
-				if ( versionNumber >= 381 )
+				if ( versionNumber >= 100 )
 				{
 					// read alchemy recipes
 					Uint32 numrecipes = 0;
@@ -2370,7 +2339,7 @@ int loadGameOld(int player, int saveIndex)
 				}
 
 				clientLearnedScrollLabels[c].clear();
-				if ( versionNumber >= 382 )
+				if ( versionNumber >= 100 )
 				{
 					// read scroll labels
 					Uint32 numscrolls = 0;
@@ -2394,7 +2363,7 @@ int loadGameOld(int player, int saveIndex)
 	                fp->seek(sizeof(Uint32), File::SeekMode::ADD);
                 }
 
-				if ( versionNumber >= 381 )
+				if ( versionNumber >= 100 )
 				{
 					// read alchemy recipes
 					Uint32 numrecipes = 0;
@@ -2407,7 +2376,7 @@ int loadGameOld(int player, int saveIndex)
 					}
 				}
 
-				if ( versionNumber >= 382 )
+				if ( versionNumber >= 100 )
 				{
 					// read scroll labels
 					Uint32 numscrolls = 0;
@@ -2445,7 +2414,7 @@ int loadGameOld(int player, int saveIndex)
 	    }
 
 		clientLearnedAlchemyRecipes[player].clear();
-		if ( versionNumber >= 381 )
+		if ( versionNumber >= 100 )
 		{
 			// read alchemy recipes
 			Uint32 numrecipes = 0;
@@ -2461,7 +2430,7 @@ int loadGameOld(int player, int saveIndex)
 		}
 
 		clientLearnedScrollLabels[player].clear();
-		if ( versionNumber >= 382 )
+		if ( versionNumber >= 100 )
 		{
 			// read scroll labels
 			Uint32 numscrolls = 0;
@@ -2476,7 +2445,7 @@ int loadGameOld(int player, int saveIndex)
     }
 
 	int monsters = NUMMONSTERS;
-	if ( versionNumber < 325 )
+	if ( versionNumber < 100 )
 	{
 		monsters = 33;
 	}
@@ -2505,7 +2474,7 @@ int loadGameOld(int player, int saveIndex)
 		fp->seek(sizeof(Sint32), File::SeekMode::ADD);
 		fp->seek(sizeof(Sint32), File::SeekMode::ADD);
 
-		if ( versionNumber >= 323 )
+		if ( versionNumber >= 100 )
 		{
 			fp->seek( sizeof(Sint32)*NUMPROFICIENCIES, File::SeekMode::ADD);
 		}
@@ -2514,7 +2483,7 @@ int loadGameOld(int player, int saveIndex)
 			fp->seek(sizeof(Sint32)*14, File::SeekMode::ADD);
 		}
 
-		if ( versionNumber <= 323 ) // legacy
+		if ( versionNumber <= 100 ) // legacy
 		{
 			fp->seek(sizeof(bool)*32, File::SeekMode::ADD);
 			fp->seek(sizeof(Sint32)*32, File::SeekMode::ADD);
@@ -2525,7 +2494,7 @@ int loadGameOld(int player, int saveIndex)
 			fp->seek(sizeof(Sint32)*NUMEFFECTS, File::SeekMode::ADD);
 		}
 
-		if ( versionNumber >= 323 )
+		if ( versionNumber >= 100 )
 		{
 			fp->seek(sizeof(Sint32)*32, File::SeekMode::ADD); // stat flags
 		}
@@ -2601,7 +2570,7 @@ int loadGameOld(int player, int saveIndex)
 	fp->read(&stats[player]->type, sizeof(Monster), 1);
 	fp->read(&stats[player]->sex, sizeof(sex_t), 1);
 	fp->read(&stats[player]->appearance, sizeof(Uint32), 1);
-	if ( versionNumber >= 323 )
+	if ( versionNumber >= 100 )
 	{
 		stats[player]->playerRace = ((stats[player]->appearance & 0xFF00) >> 8);
 		stats[player]->appearance = (stats[player]->appearance & 0xFF);
@@ -2623,20 +2592,18 @@ int loadGameOld(int player, int saveIndex)
 	fp->read(&stats[player]->HUNGER, sizeof(Sint32), 1);
 	for ( int c = 0; c < NUMPROFICIENCIES; c++ )
 	{
-		if ( versionNumber < 323 && c >= PRO_UNARMED )
+		if ( versionNumber < 100 && c >= PRO_UNARMED )
 		{
-			stats[player]->setProficiency(c, 0);
+			stats[player]->PROFICIENCIES[c] = 0;
 		}
 		else
 		{
-			Sint32 val = 0;
-			fp->read(&val, sizeof(Sint32), 1);
-			stats[player]->setProficiency(c, val);
+			fp->read(&stats[player]->PROFICIENCIES[c], sizeof(Sint32), 1);
 		}
 	}
 	for ( int c = 0; c < NUMEFFECTS; c++ )
 	{
-		if ( versionNumber <= 323 ) // legacy
+		if ( versionNumber <= 100 ) // legacy
 		{
 			if ( c < 32 )
 			{
@@ -2655,7 +2622,7 @@ int loadGameOld(int player, int saveIndex)
 			fp->read(&stats[player]->EFFECTS_TIMERS[c], sizeof(Sint32), 1);
 		}
 	}
-	if ( versionNumber >= 323 )
+	if ( versionNumber >= 100 )
 	{
 		for ( int c = 0; c < 32; c++ )
 		{
@@ -3040,20 +3007,18 @@ list_t* loadGameFollowersOld(int saveIndex)
 
 			for ( int j = 0; j < NUMPROFICIENCIES; j++ )
 			{
-				if ( versionNumber < 323 && j >= PRO_UNARMED )
+				if ( versionNumber < 100 && j >= PRO_UNARMED )
 				{
-					followerStats->setProficiency(j, 0);
+					followerStats->PROFICIENCIES[j] = 0;
 				}
 				else
 				{
-					Sint32 val = 0;
-					fp->read(&val, sizeof(Sint32), 1);
-					followerStats->setProficiency(j, val);
+					fp->read(&followerStats->PROFICIENCIES[j], sizeof(Sint32), 1);
 				}
 			}
 			for ( int j = 0; j < NUMEFFECTS; j++ )
 			{
-				if ( versionNumber <= 323 ) // legacy
+				if ( versionNumber <= 100 ) // legacy
 				{
 					if ( c < 32 )
 					{
@@ -3072,14 +3037,14 @@ list_t* loadGameFollowersOld(int saveIndex)
 					fp->read(&followerStats->EFFECTS_TIMERS[j], sizeof(Sint32), 1);
 				}
 			}
-			if ( versionNumber >= 323 )
+			if ( versionNumber >= 100 )
 			{
 				for ( int j = 0; j < 32; ++j )
 				{
 					fp->read(&followerStats->MISC_FLAGS[j], sizeof(Sint32), 1);
 				}
 			}
-			if ( versionNumber >= 384 )
+			if ( versionNumber >= 100 )
 			{
 				Uint32 numAttributes = 0;
 				fp->read(&numAttributes, sizeof(Uint32), 1);
@@ -3298,7 +3263,7 @@ SaveGameInfo getSaveGameInfo(bool singleplayer, int saveIndex)
 		hash = tm->tm_hour + tm->tm_mday * tm->tm_year + tm->tm_wday + tm->tm_yday;
 	}
 	if (info.players.size() > info.player_num) {
-		if ( info.game_version < 410 )
+		if ( info.game_version < 100 )
 		{
 			auto& stats = info.players[info.player_num].stats;
 			hash += stats.STR + stats.LVL + stats.DEX * stats.INT;
@@ -3329,6 +3294,19 @@ SaveGameInfo getSaveGameInfo(bool singleplayer, int saveIndex)
 const char* getSaveGameName(const SaveGameInfo& info)
 {
     return info.gamename.c_str();
+}
+
+/*-------------------------------------------------------------------------------
+
+	getSaveGameUniqueGameKey
+
+	Returns the uniqueGameKey variable stored in the save game
+
+-------------------------------------------------------------------------------*/
+
+Uint32 getSaveGameUniqueGameKey(const SaveGameInfo& info)
+{
+	return info.gamekey;
 }
 
 /*-------------------------------------------------------------------------------
@@ -3403,7 +3381,7 @@ int getSavegameVersion(const char* checkstr)
 		}
 	}
 	versionNumber = atoi(versionStr); // convert from string to int.
-	if ( versionNumber < 200 || versionNumber > 999 )
+	if ( versionNumber < 100 || versionNumber > 999 )
 	{
 		// if version number less than v2.0.0, or more than 3 digits, abort.
 		return -1;
@@ -3539,8 +3517,6 @@ void updatePlayerConductsInMainLoop()
 	{
 		gameStatistics[STATISTICS_DISABLE_UPLOAD] = 1;
 	}
-
-	achievementObserver.updateClientBounties(false);
 
 	achievementObserver.achievementTimersTickDown();
 }
@@ -4119,517 +4095,516 @@ void updateAchievementThankTheTank(int player, Entity* target, bool targetKilled
 
 bool steamLeaderboardSetScore(score_t* score)
 {
-	return false;
-//	if ( !g_SteamLeaderboards )
-//	{
-//		return false;
-//	}
-//
-//	if ( !score )
-//	{
-//		return false;
-//	}
-//
-//	if ( score->victory == 0 )
-//	{
-//		return false;
-//	}
-//
-//	if ( score->conductGameChallenges[CONDUCT_CHEATS_ENABLED] 
-//		|| Mods::disableSteamAchievements
-//		|| score->conductGameChallenges[CONDUCT_LIFESAVING] )
-//	{
-//		return false;
-//	}
-//	if ( score->gameStatistics[STATISTICS_DISABLE_UPLOAD] == 1 )
-//	{
-//		return false;
-//	}
-//	
-//	bool monster = false;
-//	if ( score->stats && score->stats->playerRace > 0 && score->stats->appearance == 0 )
-//	{
-//		monster = true;
-//	}
-//
-//	if ( !score->conductGameChallenges[CONDUCT_MULTIPLAYER] )
-//	{
-//		// single player
-//		if ( !score->conductGameChallenges[CONDUCT_HARDCORE] )
-//		{
-//			if ( score->victory == 2 )
-//			{
-//				if ( monster )
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_HELL_TIME;
-//				}
-//				else
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_HELL_TIME;
-//				}
-//			}
-//			else if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
-//			{
-//				if ( monster )
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_NORMAL_TIME;
-//				}
-//				else
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_NORMAL_TIME;
-//				}
-//			}
-//			else if ( score->victory == 1 )
-//			{
-//				if ( monster )
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_CLASSIC_TIME;
-//				}
-//				else
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_CLASSIC_TIME;
-//				}
-//			}
-//		}
-//		else if ( score->conductGameChallenges[CONDUCT_HARDCORE] )
-//		{
-//			if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
-//			{
-//				if ( monster )
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_HARDCORE_TIME;
-//				}
-//				else
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_HARDCORE_TIME;
-//				}
-//			}
-//			else
-//			{
-//				if ( monster )
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_CLASSIC_HARDCORE_TIME;
-//				}
-//				else
-//				{
-//					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_CLASSIC_HARDCORE_TIME;
-//				}
-//			}
-//		}
-//	}
-//	else if ( score->conductGameChallenges[CONDUCT_MULTIPLAYER] )
-//	{
-//		// multiplayer
-//		if ( score->victory == 2 )
-//		{
-//			if ( monster )
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_HELL_TIME;
-//			}
-//			else
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_HELL_TIME;
-//			}
-//		}
-//		else if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
-//		{
-//			if ( monster )
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_TIME;
-//			}
-//			else
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_TIME;
-//			}
-//		}
-//		else if ( score->victory == 1 )
-//		{
-//			if ( monster )
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_CLASSIC_TIME;
-//			}
-//			else
-//			{
-//				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_CLASSIC_TIME;
-//			}
-//		}
-//	}
-//	else
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_NONE;
-//	}
-//
-//	if ( g_SteamLeaderboards->LeaderboardUpload.boardIndex == LEADERBOARD_NONE )
-//	{
-//		return false;
-//	}
-//
-//	// assemble the score tags.
-//	//int completionTime = score->completionTime;
-//	int c = 0;
-//	int tag = TAG_MONSTER_KILLS_1;
-//	int i = 0;
-//	int tagWidth = 8;
-//	for ( int c = 0; c < NUMMONSTERS; ++c )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= (static_cast<Uint8>(score->kills[c]) << (i * tagWidth));
-//		++i;
-//		if ( i >((32 / tagWidth) - 1) )
-//		{
-//			i = 0;
-//			++tag;
-//		}
-//	}
-//
-//	i = 0;
-//	tagWidth = 8;
-//	tag = TAG_NAME1;
-//	for ( int c = 0; c < std::min(32, (int)(strlen(score->stats->name))); ++c )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= (Uint8)(score->stats->name[c]) << (i * tagWidth);
-//		++i;
-//		if ( i > ((32 / tagWidth) - 1) )
-//		{
-//			i = 0;
-//			++tag;
-//		}
-//	}
-//
-//	tagWidth = 8;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= score->stats->type;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->stats->sex) << (tagWidth * 1);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->stats->appearance) << (tagWidth * 2);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->classnum) << (tagWidth * 3);
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->victory);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->dungeonlevel) << (tagWidth);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductPenniless) << (tagWidth * 2);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductFoodless) << (tagWidth * 2 + 1);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductVegetarian) << (tagWidth * 2 + 2);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductIlliterate) << (tagWidth * 2 + 3);
-//
-//	tag = TAG_CONDUCT_2W_1;
-//	tagWidth = 16;
-//	i = 0;
-//	for ( int c = 0; c < 32; ++c )
-//	{
-//		if ( c < 16 )
-//		{
-//			g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->conductGameChallenges[c] << (c * 2);
-//		}
-//		else
-//		{
-//			g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->conductGameChallenges[c] << ((16 - c) * 2);
-//		}
-//		if ( c == 15 )
-//		{
-//			++tag;
-//		}
-//	}
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_CONDUCT_4W_1] |= (Uint8)(score->stats->playerRace); // store in right-most 8 bits.
-//	// conducts TAG_CONDUCT_4W_2 to TAG_CONDUCT_4W_4 unused.
-//
-//	// store new gameplay stats as required. not many to start with.
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_FIRE_MAYBE_DIFFERENT]);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_SITTING_DUCK]) << 2;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_TEMPT_FATE]) << 4;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_BOMB_SQUAD];
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_HOT_TUB_TIME_MACHINE] << 8;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_YES_WE_CAN] << 16;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_16W_1] |= (Uint16)score->gameStatistics[STATISTICS_HEAL_BOT];
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_HEALTH] |= (Uint16)score->stats->MAXHP;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_HEALTH] |= (Uint16)score->stats->HP << 16;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_MANA] |= (Uint16)score->stats->MAXMP;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_MANA] |= (Uint16)score->stats->MP << 16;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->STR;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->DEX << 8;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->CON << 16;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->INT << 24;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->PER;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->CHR << 8;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->EXP << 16;
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->LVL << 24;
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GOLD] |= score->stats->GOLD;
-//
-//	tagWidth = 8;
-//	tag = TAG_PROFICIENCY1;
-//	i = 0;
-//	for ( int c = 0; c < NUMPROFICIENCIES; ++c )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->stats->PROFICIENCIES[c] << (i * tagWidth);
-//		++i;
-//		if ( i > ((32 / tagWidth) - 1) )
-//		{
-//			i = 0;
-//			++tag;
-//		}
-//	}
-//
-//	if ( score->stats->helmet )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->helmet->type);
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->helmet->beatitude);
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
-//			(score->stats->helmet->appearance % items[score->stats->helmet->type].variations);
-//	}
-//	if ( score->stats->breastplate )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->breastplate->type) << 8;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->breastplate->beatitude) << 8;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
-//			(score->stats->breastplate->appearance % items[score->stats->breastplate->type].variations) << 8;
-//	}
-//	if ( score->stats->gloves )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->gloves->type) << 16;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->gloves->beatitude) << 16;
-//	}
-//	if ( score->stats->shoes )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->shoes->type) << 24;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->shoes->beatitude) << 24;
-//	}
-//
-//	if ( score->stats->shield )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->shield->type);
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->shield->beatitude);
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
-//			(score->stats->shield->appearance % items[score->stats->shield->type].variations) << 12;
-//	}
-//	if ( score->stats->weapon )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->weapon->type) << 8;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->weapon->beatitude) << 8;
-//	}
-//	if ( score->stats->cloak )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->cloak->type) << 16;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->cloak->beatitude) << 16;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |= 
-//			(score->stats->cloak->appearance % items[score->stats->cloak->type].variations) << 4;
-//	}
-//	if ( score->stats->amulet )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->amulet->type) << 24;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->amulet->beatitude) << 16;
-//	}
-//
-//	if ( score->stats->ring )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT3] |= (Uint8)(score->stats->ring->type);
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE3] |= (Sint16)(score->stats->ring->beatitude);
-//	}
-//	if ( score->stats->mask )
-//	{
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT3] |= (Uint8)(score->stats->mask->type) << 8;
-//		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE3] |= (Sint16)(score->stats->mask->beatitude);
-//	}
-//
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_TOTAL_SCORE] = totalScore(score);
-//	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_COMPLETION_TIME] = score->completionTime / TICKS_PER_SECOND;
-//	return true;
+	if ( !g_SteamLeaderboards )
+	{
+		return false;
+	}
+
+	if ( !score )
+	{
+		return false;
+	}
+
+	if ( score->victory == 0 )
+	{
+		return false;
+	}
+
+	if ( score->conductGameChallenges[CONDUCT_CHEATS_ENABLED] 
+		|| Mods::disableSteamAchievements
+		|| score->conductGameChallenges[CONDUCT_LIFESAVING] )
+	{
+		return false;
+	}
+	if ( score->gameStatistics[STATISTICS_DISABLE_UPLOAD] == 1 )
+	{
+		return false;
+	}
+	
+	bool monster = false;
+	if ( score->stats && score->stats->playerRace > 0 && score->stats->appearance == 0 )
+	{
+		monster = true;
+	}
+
+	if ( !score->conductGameChallenges[CONDUCT_MULTIPLAYER] )
+	{
+		// single player
+		if ( !score->conductGameChallenges[CONDUCT_HARDCORE] )
+		{
+			if ( score->victory == 2 )
+			{
+				if ( monster )
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_HELL_TIME;
+				}
+				else
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_HELL_TIME;
+				}
+			}
+			else if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
+			{
+				if ( monster )
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_NORMAL_TIME;
+				}
+				else
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_NORMAL_TIME;
+				}
+			}
+			else if ( score->victory == 1 )
+			{
+				if ( monster )
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_CLASSIC_TIME;
+				}
+				else
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_CLASSIC_TIME;
+				}
+			}
+		}
+		else if ( score->conductGameChallenges[CONDUCT_HARDCORE] )
+		{
+			if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
+			{
+				if ( monster )
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_HARDCORE_TIME;
+				}
+				else
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_HARDCORE_TIME;
+				}
+			}
+			else
+			{
+				if ( monster )
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_CLASSIC_HARDCORE_TIME;
+				}
+				else
+				{
+					g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_CLASSIC_HARDCORE_TIME;
+				}
+			}
+		}
+	}
+	else if ( score->conductGameChallenges[CONDUCT_MULTIPLAYER] )
+	{
+		// multiplayer
+		if ( score->victory == 2 )
+		{
+			if ( monster )
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_HELL_TIME;
+			}
+			else
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_HELL_TIME;
+			}
+		}
+		else if ( score->victory == 3 || score->victory == 4 || score->victory == 5 )
+		{
+			if ( monster )
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_TIME;
+			}
+			else
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_TIME;
+			}
+		}
+		else if ( score->victory == 1 )
+		{
+			if ( monster )
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_DLC_MULTIPLAYER_CLASSIC_TIME;
+			}
+			else
+			{
+				g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_MULTIPLAYER_CLASSIC_TIME;
+			}
+		}
+	}
+	else
+	{
+		g_SteamLeaderboards->LeaderboardUpload.boardIndex = LEADERBOARD_NONE;
+	}
+
+	if ( g_SteamLeaderboards->LeaderboardUpload.boardIndex == LEADERBOARD_NONE )
+	{
+		return false;
+	}
+
+	// assemble the score tags.
+	//int completionTime = score->completionTime;
+	int c = 0;
+	int tag = TAG_MONSTER_KILLS_1;
+	int i = 0;
+	int tagWidth = 8;
+	for ( int c = 0; c < NUMMONSTERS; ++c )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= (static_cast<Uint8>(score->kills[c]) << (i * tagWidth));
+		++i;
+		if ( i >((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
+
+	i = 0;
+	tagWidth = 8;
+	tag = TAG_NAME1;
+	for ( int c = 0; c < std::min(32, (int)(strlen(score->stats->name))); ++c )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= (Uint8)(score->stats->name[c]) << (i * tagWidth);
+		++i;
+		if ( i > ((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
+
+	tagWidth = 8;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= score->stats->type;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->stats->sex) << (tagWidth * 1);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->stats->appearance) << (tagWidth * 2);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_RACESEXAPPEARANCECLASS] |= (score->classnum) << (tagWidth * 3);
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->victory);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->dungeonlevel) << (tagWidth);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductPenniless) << (tagWidth * 2);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductFoodless) << (tagWidth * 2 + 1);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductVegetarian) << (tagWidth * 2 + 2);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] |= (score->conductIlliterate) << (tagWidth * 2 + 3);
+
+	tag = TAG_CONDUCT_2W_1;
+	tagWidth = 16;
+	i = 0;
+	for ( int c = 0; c < 32; ++c )
+	{
+		if ( c < 16 )
+		{
+			g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->conductGameChallenges[c] << (c * 2);
+		}
+		else
+		{
+			g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->conductGameChallenges[c] << ((16 - c) * 2);
+		}
+		if ( c == 15 )
+		{
+			++tag;
+		}
+	}
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_CONDUCT_4W_1] |= (Uint8)(score->stats->playerRace); // store in right-most 8 bits.
+	// conducts TAG_CONDUCT_4W_2 to TAG_CONDUCT_4W_4 unused.
+
+	// store new gameplay stats as required. not many to start with.
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_FIRE_MAYBE_DIFFERENT]);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_SITTING_DUCK]) << 2;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_2W_1] |= std::min(3, score->gameStatistics[STATISTICS_TEMPT_FATE]) << 4;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_BOMB_SQUAD];
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_HOT_TUB_TIME_MACHINE] << 8;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_8W_1] |= (Uint8)score->gameStatistics[STATISTICS_YES_WE_CAN] << 16;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GAMEPLAY_STATS_16W_1] |= (Uint16)score->gameStatistics[STATISTICS_HEAL_BOT];
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_HEALTH] |= (Uint16)score->stats->MAXHP;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_HEALTH] |= (Uint16)score->stats->HP << 16;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_MANA] |= (Uint16)score->stats->MAXMP;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_MANA] |= (Uint16)score->stats->MP << 16;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->STR;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->DEX << 8;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->CON << 16;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_STRDEXCONINT] |= (Uint8)score->stats->INT << 24;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->PER;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->CHR << 8;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->EXP << 16;
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_PERCHREXPLVL] |= (Uint8)score->stats->LVL << 24;
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_GOLD] |= score->stats->GOLD;
+
+	tagWidth = 8;
+	tag = TAG_PROFICIENCY1;
+	i = 0;
+	for ( int c = 0; c < NUMPROFICIENCIES; ++c )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[tag] |= score->stats->PROFICIENCIES[c] << (i * tagWidth);
+		++i;
+		if ( i > ((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
+
+	if ( score->stats->helmet )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->helmet->type);
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->helmet->beatitude);
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
+			(score->stats->helmet->appearance % items[score->stats->helmet->type].variations);
+	}
+	if ( score->stats->breastplate )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->breastplate->type) << 8;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->breastplate->beatitude) << 8;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
+			(score->stats->breastplate->appearance % items[score->stats->breastplate->type].variations) << 8;
+	}
+	if ( score->stats->gloves )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->gloves->type) << 16;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->gloves->beatitude) << 16;
+	}
+	if ( score->stats->shoes )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT1] |= (Uint8)(score->stats->shoes->type) << 24;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE1] |= (Sint16)(score->stats->shoes->beatitude) << 24;
+	}
+
+	if ( score->stats->shield )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->shield->type);
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->shield->beatitude);
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |=
+			(score->stats->shield->appearance % items[score->stats->shield->type].variations) << 12;
+	}
+	if ( score->stats->weapon )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->weapon->type) << 8;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->weapon->beatitude) << 8;
+	}
+	if ( score->stats->cloak )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->cloak->type) << 16;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->cloak->beatitude) << 16;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_APPEARANCE] |= 
+			(score->stats->cloak->appearance % items[score->stats->cloak->type].variations) << 4;
+	}
+	if ( score->stats->amulet )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT2] |= (Uint8)(score->stats->amulet->type) << 24;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE2] |= (Sint16)(score->stats->amulet->beatitude) << 16;
+	}
+
+	if ( score->stats->ring )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT3] |= (Uint8)(score->stats->ring->type);
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE3] |= (Sint16)(score->stats->ring->beatitude);
+	}
+	if ( score->stats->mask )
+	{
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT3] |= (Uint8)(score->stats->mask->type) << 8;
+		g_SteamLeaderboards->LeaderboardUpload.tags[TAG_EQUIPMENT_BEATITUDE3] |= (Sint16)(score->stats->mask->beatitude);
+	}
+
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_TOTAL_SCORE] = totalScore(score);
+	g_SteamLeaderboards->LeaderboardUpload.tags[TAG_COMPLETION_TIME] = score->completionTime / TICKS_PER_SECOND;
+	return true;
 }
 
 bool steamLeaderboardReadScore(int tags[CSteamLeaderboards::k_numLeaderboardTags])
 {
-	return false;
-	//stats[0]->clearStats();
+	stats[0]->clearStats();
 
-	//int c = 0;
-	//int tag = TAG_MONSTER_KILLS_1;
-	//int tagWidth = 8;
-	//int i = 0;
-	//for ( int c = 0; c < NUMMONSTERS; c++ )
-	//{
-	//	kills[c] = ((tags[tag]) >> (i * tagWidth)) & 0xFF;
-	//	++i;
-	//	if ( i > ((32 / tagWidth) - 1) )
-	//	{
-	//		i = 0;
-	//		++tag;
-	//	}
-	//}
+	int c = 0;
+	int tag = TAG_MONSTER_KILLS_1;
+	int tagWidth = 8;
+	int i = 0;
+	for ( int c = 0; c < NUMMONSTERS; c++ )
+	{
+		kills[c] = ((tags[tag]) >> (i * tagWidth)) & 0xFF;
+		++i;
+		if ( i > ((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
 
-	//i = 0;
-	//tagWidth = 8;
-	//tag = TAG_NAME1;
-	//char name[33] = "";
-	//for ( int c = 0; c < 32; ++c )
-	//{
-	//	name[c] = ((tags[tag]) >> (i * tagWidth)) & 0xFF;
-	//	if ( name[c] == 0 )
-	//	{
-	//		break;
-	//	}
-	//	++i;
-	//	if ( i > ((32 / tagWidth) - 1) )
-	//	{
-	//		i = 0;
-	//		++tag;
-	//	}
-	//}
-	//name[c] = '\0';
-	//strcpy(stats[0]->name, name);
+	i = 0;
+	tagWidth = 8;
+	tag = TAG_NAME1;
+	char name[33] = "";
+	for ( int c = 0; c < 32; ++c )
+	{
+		name[c] = ((tags[tag]) >> (i * tagWidth)) & 0xFF;
+		if ( name[c] == 0 )
+		{
+			break;
+		}
+		++i;
+		if ( i > ((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
+	name[c] = '\0';
+	strcpy(stats[0]->name, name);
 
 
-	//tagWidth = 8;
-	//stats[0]->type = (Monster)(tags[TAG_RACESEXAPPEARANCECLASS] & 0xFF);
-	//stats[0]->sex = (sex_t)((tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth) & 0xFF);
-	//stats[0]->appearance = (tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth * 2) & 0xFF;
-	//client_classes[0] = (tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth * 3) & 0xFF;
+	tagWidth = 8;
+	stats[0]->type = (Monster)(tags[TAG_RACESEXAPPEARANCECLASS] & 0xFF);
+	stats[0]->sex = (sex_t)((tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth) & 0xFF);
+	stats[0]->appearance = (tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth * 2) & 0xFF;
+	client_classes[0] = (tags[TAG_RACESEXAPPEARANCECLASS] >> tagWidth * 3) & 0xFF;
 
-	//victory = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 0) & 0xFF;
-	//currentlevel = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 1) & 0xFF;
-	//conductPenniless = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 2) & 1;
-	//conductFoodless = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 1)) & 1;
-	//conductVegetarian = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 2)) & 1;
-	//conductIlliterate = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 3)) & 1;
+	victory = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 0) & 0xFF;
+	currentlevel = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 1) & 0xFF;
+	conductPenniless = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> tagWidth * 2) & 1;
+	conductFoodless = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 1)) & 1;
+	conductVegetarian = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 2)) & 1;
+	conductIlliterate = (tags[TAG_VICTORYDUNGEONLEVELCONDUCTORIGINAL] >> (tagWidth * 2 + 3)) & 1;
 
-	//tag = TAG_CONDUCT_2W_1;
-	//tagWidth = 2;
-	//i = 0;
-	//for ( int c = 0; c < 32; ++c )
-	//{
-	//	if ( c < 16 )
-	//	{
-	//		conductGameChallenges[c] = (tags[tag] >> c * tagWidth) & 0b11;
-	//	}
-	//	else
-	//	{
-	//		conductGameChallenges[c] = (tags[tag] >> (16 - c) * tagWidth) & 0b11;
-	//	}
-	//	if ( c == 15 )
-	//	{
-	//		++tag;
-	//	}
-	//}
+	tag = TAG_CONDUCT_2W_1;
+	tagWidth = 2;
+	i = 0;
+	for ( int c = 0; c < 32; ++c )
+	{
+		if ( c < 16 )
+		{
+			conductGameChallenges[c] = (tags[tag] >> c * tagWidth) & 0b11;
+		}
+		else
+		{
+			conductGameChallenges[c] = (tags[tag] >> (16 - c) * tagWidth) & 0b11;
+		}
+		if ( c == 15 )
+		{
+			++tag;
+		}
+	}
 
-	//stats[0]->playerRace = (tags[TAG_CONDUCT_4W_1] & 0xFF);
+	stats[0]->playerRace = (tags[TAG_CONDUCT_4W_1] & 0xFF);
 
-	//// conducts TAG_CONDUCT_4W_2 to TAG_CONDUCT_4W_4 unused.
+	// conducts TAG_CONDUCT_4W_2 to TAG_CONDUCT_4W_4 unused.
 
-	//// store new gameplay stats as required. not many to start with.
-	//gameStatistics[STATISTICS_FIRE_MAYBE_DIFFERENT] = tags[TAG_GAMEPLAY_STATS_2W_1] & 0b11;
-	//gameStatistics[STATISTICS_SITTING_DUCK] = (tags[TAG_GAMEPLAY_STATS_2W_1] >> 2) & 0b11;
-	//gameStatistics[STATISTICS_TEMPT_FATE] = (tags[TAG_GAMEPLAY_STATS_2W_1] >> 4) & 0b11;
+	// store new gameplay stats as required. not many to start with.
+	gameStatistics[STATISTICS_FIRE_MAYBE_DIFFERENT] = tags[TAG_GAMEPLAY_STATS_2W_1] & 0b11;
+	gameStatistics[STATISTICS_SITTING_DUCK] = (tags[TAG_GAMEPLAY_STATS_2W_1] >> 2) & 0b11;
+	gameStatistics[STATISTICS_TEMPT_FATE] = (tags[TAG_GAMEPLAY_STATS_2W_1] >> 4) & 0b11;
 
-	//gameStatistics[STATISTICS_BOMB_SQUAD] = tags[TAG_GAMEPLAY_STATS_8W_1] & 0xFF;
-	//gameStatistics[STATISTICS_HOT_TUB_TIME_MACHINE] = (tags[TAG_GAMEPLAY_STATS_8W_1] >> 8) & 0xFF;
-	//gameStatistics[STATISTICS_YES_WE_CAN] = (tags[TAG_GAMEPLAY_STATS_8W_1] >> 16) & 0xFF;
+	gameStatistics[STATISTICS_BOMB_SQUAD] = tags[TAG_GAMEPLAY_STATS_8W_1] & 0xFF;
+	gameStatistics[STATISTICS_HOT_TUB_TIME_MACHINE] = (tags[TAG_GAMEPLAY_STATS_8W_1] >> 8) & 0xFF;
+	gameStatistics[STATISTICS_YES_WE_CAN] = (tags[TAG_GAMEPLAY_STATS_8W_1] >> 16) & 0xFF;
 
-	//gameStatistics[STATISTICS_HEAL_BOT] = tags[TAG_GAMEPLAY_STATS_16W_1] & 0xFFFF;
+	gameStatistics[STATISTICS_HEAL_BOT] = tags[TAG_GAMEPLAY_STATS_16W_1] & 0xFFFF;
 
-	//stats[0]->MAXHP = tags[TAG_HEALTH] & 0xFFFF;
-	//stats[0]->HP = (tags[TAG_HEALTH] >> 16) & 0xFFFF;
-	//stats[0]->MAXMP = tags[TAG_MANA] & 0xFFFF;
-	//stats[0]->MP = (tags[TAG_MANA] >> 16) & 0xFFFF;
-	//stats[0]->STR = (tags[TAG_STRDEXCONINT] >> 0) & 0xFF;
-	//if ( stats[0]->STR > 240 )
-	//{
-	//	stats[0]->STR = (Sint8)stats[0]->STR;
-	//}
-	//stats[0]->DEX = (tags[TAG_STRDEXCONINT] >> 8) & 0xFF;
-	//if ( stats[0]->DEX > 240 )
-	//{
-	//	stats[0]->DEX = (Sint8)stats[0]->DEX;
-	//}
-	//stats[0]->CON = (tags[TAG_STRDEXCONINT] >> 16) & 0xFF;
-	//if ( stats[0]->CON > 240 )
-	//{
-	//	stats[0]->CON = (Sint8)stats[0]->CON;
-	//}
-	//stats[0]->INT = (tags[TAG_STRDEXCONINT] >> 24) & 0xFF;
-	//if ( stats[0]->INT > 240 )
-	//{
-	//	stats[0]->INT = (Sint8)stats[0]->INT;
-	//}
-	//stats[0]->PER = (tags[TAG_PERCHREXPLVL] >> 0) & 0xFF;
-	//if ( stats[0]->PER > 240 )
-	//{
-	//	stats[0]->PER = (Sint8)stats[0]->PER;
-	//}
-	//stats[0]->CHR = (tags[TAG_PERCHREXPLVL] >> 8) & 0xFF;
-	//if ( stats[0]->CHR > 240 )
-	//{
-	//	stats[0]->CHR = (Sint8)stats[0]->CHR;
-	//}
-	//stats[0]->EXP = (tags[TAG_PERCHREXPLVL] >> 16) & 0xFF;
-	//stats[0]->LVL = (tags[TAG_PERCHREXPLVL] >> 24) & 0xFF;
-	//stats[0]->GOLD = tags[TAG_GOLD];
+	stats[0]->MAXHP = tags[TAG_HEALTH] & 0xFFFF;
+	stats[0]->HP = (tags[TAG_HEALTH] >> 16) & 0xFFFF;
+	stats[0]->MAXMP = tags[TAG_MANA] & 0xFFFF;
+	stats[0]->MP = (tags[TAG_MANA] >> 16) & 0xFFFF;
+	stats[0]->STR = (tags[TAG_STRDEXCONINT] >> 0) & 0xFF;
+	if ( stats[0]->STR > 240 )
+	{
+		stats[0]->STR = (Sint8)stats[0]->STR;
+	}
+	stats[0]->DEX = (tags[TAG_STRDEXCONINT] >> 8) & 0xFF;
+	if ( stats[0]->DEX > 240 )
+	{
+		stats[0]->DEX = (Sint8)stats[0]->DEX;
+	}
+	stats[0]->CON = (tags[TAG_STRDEXCONINT] >> 16) & 0xFF;
+	if ( stats[0]->CON > 240 )
+	{
+		stats[0]->CON = (Sint8)stats[0]->CON;
+	}
+	stats[0]->INT = (tags[TAG_STRDEXCONINT] >> 24) & 0xFF;
+	if ( stats[0]->INT > 240 )
+	{
+		stats[0]->INT = (Sint8)stats[0]->INT;
+	}
+	stats[0]->PER = (tags[TAG_PERCHREXPLVL] >> 0) & 0xFF;
+	if ( stats[0]->PER > 240 )
+	{
+		stats[0]->PER = (Sint8)stats[0]->PER;
+	}
+	stats[0]->CHR = (tags[TAG_PERCHREXPLVL] >> 8) & 0xFF;
+	if ( stats[0]->CHR > 240 )
+	{
+		stats[0]->CHR = (Sint8)stats[0]->CHR;
+	}
+	stats[0]->EXP = (tags[TAG_PERCHREXPLVL] >> 16) & 0xFF;
+	stats[0]->LVL = (tags[TAG_PERCHREXPLVL] >> 24) & 0xFF;
+	stats[0]->GOLD = tags[TAG_GOLD];
 
-	//tagWidth = 8;
-	//tag = TAG_PROFICIENCY1;
-	//i = 0;
-	//for ( int c = 0; c < NUMPROFICIENCIES; ++c )
-	//{
-	//	stats[0]->PROFICIENCIES[c] = (tags[tag] >> (i * tagWidth)) & 0xFF;
-	//	++i;
-	//	if ( i > ((32 / tagWidth) - 1) )
-	//	{
-	//		i = 0;
-	//		++tag;
-	//	}
-	//}
+	tagWidth = 8;
+	tag = TAG_PROFICIENCY1;
+	i = 0;
+	for ( int c = 0; c < NUMPROFICIENCIES; ++c )
+	{
+		stats[0]->PROFICIENCIES[c] = (tags[tag] >> (i * tagWidth)) & 0xFF;
+		++i;
+		if ( i > ((32 / tagWidth) - 1) )
+		{
+			i = 0;
+			++tag;
+		}
+	}
 
-	//list_FreeAll(&stats[0]->inventory);
-	//if ( ((tags[TAG_EQUIPMENT1] >> 0) & 0xFF) > 0 )
-	//{
-	//	stats[0]->helmet = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 0) & 0xFF), EXCELLENT, 
-	//		Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 0) & 0xFF), 1, tags[TAG_EQUIPMENT_APPEARANCE] & 0xF, true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT1] >> 8) & 0xFF) > 0 )
-	//{
-	//	stats[0]->breastplate = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 8) & 0xFF), EXCELLENT,
-	//		Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 8) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 8) & 0xF, true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT1] >> 16) & 0xFF) > 0 )
-	//{
-	//	stats[0]->gloves = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 16) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 16) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT1] >> 24) & 0xFF) > 0 )
-	//{
-	//	stats[0]->shoes = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 24) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
+	list_FreeAll(&stats[0]->inventory);
+	if ( ((tags[TAG_EQUIPMENT1] >> 0) & 0xFF) > 0 )
+	{
+		stats[0]->helmet = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 0) & 0xFF), EXCELLENT, 
+			Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 0) & 0xFF), 1, tags[TAG_EQUIPMENT_APPEARANCE] & 0xF, true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT1] >> 8) & 0xFF) > 0 )
+	{
+		stats[0]->breastplate = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 8) & 0xFF), EXCELLENT,
+			Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 8) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 8) & 0xF, true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT1] >> 16) & 0xFF) > 0 )
+	{
+		stats[0]->gloves = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 16) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 16) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT1] >> 24) & 0xFF) > 0 )
+	{
+		stats[0]->shoes = newItem(ItemType((tags[TAG_EQUIPMENT1] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE1] >> 24) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
 
-	//if ( ((tags[TAG_EQUIPMENT2] >> 0) & 0xFF) > 0 )
-	//{
-	//	stats[0]->shield = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 0) & 0xFF), EXCELLENT, 
-	//		Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 0) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 12) & 0xF, true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT2] >> 8) & 0xFF) > 0 )
-	//{
-	//	stats[0]->weapon = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 8) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 8) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT2] >> 16) & 0xFF) > 0 )
-	//{
-	//	stats[0]->cloak = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 16) & 0xFF), EXCELLENT, 
-	//		Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 16) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 4) & 0xF, true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT2] >> 24) & 0xFF) > 0 )
-	//{
-	//	stats[0]->amulet = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 24) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
+	if ( ((tags[TAG_EQUIPMENT2] >> 0) & 0xFF) > 0 )
+	{
+		stats[0]->shield = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 0) & 0xFF), EXCELLENT, 
+			Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 0) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 12) & 0xF, true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT2] >> 8) & 0xFF) > 0 )
+	{
+		stats[0]->weapon = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 8) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 8) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT2] >> 16) & 0xFF) > 0 )
+	{
+		stats[0]->cloak = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 16) & 0xFF), EXCELLENT, 
+			Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 16) & 0xFF), 1, (tags[TAG_EQUIPMENT_APPEARANCE] >> 4) & 0xF, true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT2] >> 24) & 0xFF) > 0 )
+	{
+		stats[0]->amulet = newItem(ItemType((tags[TAG_EQUIPMENT2] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE2] >> 24) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
 
-	//if ( ((tags[TAG_EQUIPMENT3] >> 16) & 0xFF) > 0 )
-	//{
-	//	stats[0]->ring = newItem(ItemType((tags[TAG_EQUIPMENT3] >> 16) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE3] >> 0) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
-	//if ( ((tags[TAG_EQUIPMENT3] >> 24) & 0xFF) > 0 )
-	//{
-	//	stats[0]->mask = newItem(ItemType((tags[TAG_EQUIPMENT3] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE3] >> 8) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
-	//}
+	if ( ((tags[TAG_EQUIPMENT3] >> 16) & 0xFF) > 0 )
+	{
+		stats[0]->ring = newItem(ItemType((tags[TAG_EQUIPMENT3] >> 16) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE3] >> 0) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
+	if ( ((tags[TAG_EQUIPMENT3] >> 24) & 0xFF) > 0 )
+	{
+		stats[0]->mask = newItem(ItemType((tags[TAG_EQUIPMENT3] >> 24) & 0xFF), EXCELLENT, Sint16((tags[TAG_EQUIPMENT_BEATITUDE3] >> 8) & 0xFF), 1, local_rng.rand(), true, &stats[0]->inventory);
+	}
 
-	//completionTime = tags[TAG_COMPLETION_TIME] * TICKS_PER_SECOND;
+	completionTime = tags[TAG_COMPLETION_TIME] * TICKS_PER_SECOND;
 	//g_SteamLeaderboards->LeaderboardUpload.tags[TAG_TOTAL_SCORE] = totalScore(score);
+	return true;
 }
 
 #endif // STEAMWORKS
@@ -4657,11 +4632,6 @@ bool AchievementObserver::updateOnLevelChange()
 			playerAchievements[i].ironicPunishmentTargets.clear();
 			playerAchievements[i].gastricBypassSpell = std::make_pair(0, 0);
 			playerAchievements[i].rat5000secondRule.clear();
-			playerAchievements[i].phantomMaskFirstStrikes.clear();
-			playerAchievements[i].bountyTargets.clear();
-			playerAchievements[i].updatedBountyTargets = false;
-			playerAchievements[i].wearingBountyHat = false;
-			playerAchievements[i].totalKillsTickUpdate = false;
 		}
 		levelObserved = currentlevel;
 		return true;
@@ -4681,122 +4651,8 @@ int AchievementObserver::checkUidIsFromPlayer(Uint32 uid)
 	return -1;
 }
 
-void AchievementObserver::updateClientBounties(bool firstSend)
-{
-	bool bountyLost = false;
-	if ( multiplayer != CLIENT )
-	{
-		// check if any bounties had become followers, then remove them
-		for ( int c = 0; c < MAXPLAYERS; ++c )
-		{
-			for ( node_t* node = stats[c]->FOLLOWERS.first; node != nullptr; node = node->next )
-			{
-				if ( (Uint32*)node->element )
-				{
-					Uint32 uid = *((Uint32*)node->element);
-					for ( int d = 0; d < MAXPLAYERS; ++d )
-					{
-						if ( playerAchievements[d].bountyTargets.find(uid)
-							!= playerAchievements[d].bountyTargets.end() )
-						{
-							bountyLost = true;
-							playerAchievements[d].bountyTargets.erase(uid);
-							
-							if ( stats[d] && stats[d]->helmet && stats[d]->helmet->type == HAT_BOUNTYHUNTER )
-							{
-								// failed to finish your bounty
-								messagePlayerColor(d, MESSAGE_COMBAT | MESSAGE_HINT, makeColorRGB(255, 0, 0), Language::get(6102));
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	if ( multiplayer == SERVER )
-	{
-		for ( int i = 0; i < MAXPLAYERS; ++i )
-		{
-			if ( client_disconnected[i] ) { continue; }
-
-			bool hat = false;
-			if ( stats[i] && stats[i]->helmet && stats[i]->helmet->type == HAT_BOUNTYHUNTER )
-			{
-				hat = true;
-			}
-
-			if ( hat != playerAchievements[i].wearingBountyHat )
-			{
-				playerAchievements[i].wearingBountyHat = hat;
-
-				for ( int c = 1; c < MAXPLAYERS; ++c )
-				{
-					strcpy((char*)net_packet->data, "BNTH");
-					net_packet->data[4] = i;
-					net_packet->data[5] = playerAchievements[i].wearingBountyHat ? 1 : 0;
-					net_packet->address.host = net_clients[c - 1].host;
-					net_packet->address.port = net_clients[c - 1].port;
-					net_packet->len = 6;
-					sendPacketSafe(net_sock, -1, net_packet, c - 1);
-				}
-			}
-
-			if ( i == 0 )
-			{
-				continue;
-			}
-
-			if ( !firstSend )
-			{
-				bool update = false;
-				if ( !playerAchievements[i].updatedBountyTargets )
-				{
-					if ( hat )
-					{
-						update = true;
-						playerAchievements[i].updatedBountyTargets = true;
-					}
-				}
-				else if ( bountyLost )
-				{
-					update = true;
-				}
-				else if ( ticks % (13 * TICKS_PER_SECOND) == 0 )
-				{
-					update = true;
-				}
-
-				if ( !update )
-				{
-					continue;
-				}
-			}
-
-			for ( int c = 0; c < MAXPLAYERS; ++c )
-			{
-				auto& bounties = playerAchievements[c].bountyTargets;
-				strcpy((char*)net_packet->data, "BNTY");
-				net_packet->data[4] = c;
-				net_packet->data[5] = (Uint8)bounties.size();
-				int index = 6;
-				for ( auto uid : bounties )
-				{
-					SDLNet_Write32(uid, &net_packet->data[index]);
-					index += 4;
-				}
-				net_packet->address.host = net_clients[i - 1].host;
-				net_packet->address.port = net_clients[i - 1].port;
-				net_packet->len = 6 + (bounties.size() * 4);
-				sendPacketSafe(net_sock, -1, net_packet, i - 1);
-			}
-		}
-	}
-}
-
 void AchievementObserver::updateData()
 {
-	PlayerAchievements::allPlayersDeadEvent = false;
 	getCurrentPlayerUids();
 	if ( updateOnLevelChange() )
 	{
@@ -4805,59 +4661,6 @@ void AchievementObserver::updateData()
 		messagePlayer(0, MESSAGE_DEBUG, "[DEBUG]: Achievement data reset for floor.");
 #endif
 	}
-
-	std::vector<Entity*> monstersGeneratedOnLevel;
-	for ( node_t* node = map.creatures->first; node; node = node->next )
-	{
-		Entity* mapCreature = (Entity*)node->element;
-		if ( mapCreature && mapCreature->behavior == &actMonster )
-		{
-			monstersGeneratedOnLevel.push_back(mapCreature);
-		}
-	}
-
-	BaronyRNG bountySeed;
-	bountySeed.seedBytes(&mapseed, sizeof(mapseed));
-	if ( multiplayer != CLIENT )
-	{
-		std::vector<Entity*> bountyTargets;
-		for ( auto monster : monstersGeneratedOnLevel )
-		{
-			bountyTargets.push_back(monster);
-		}
-		for ( int i = 0; i < MAXPLAYERS; ++i )
-		{
-			achievementObserver.playerAchievements[i].bountyTargets.clear();
-			if ( client_disconnected[i] )
-			{
-				continue;
-			}
-			if ( bountyTargets.size() > 0 )
-			{
-				size_t index = bountySeed.rand() % bountyTargets.size();
-				achievementObserver.playerAchievements[i].bountyTargets.insert(bountyTargets[index]->getUID());
-				bountyTargets.erase(bountyTargets.begin() + index);
-
-				if ( stats[i]->helmet && stats[i]->helmet->type == HAT_BOUNTYHUNTER )
-				{
-					if ( stats[i]->helmet->beatitude >= 0 || shouldInvertEquipmentBeatitude(stats[i]) )
-					{
-						if ( abs(stats[i]->helmet->beatitude) >= 2 )
-						{
-							if ( bountyTargets.size() > 0 )
-							{
-								// additional bounty
-								index = bountySeed.rand() % bountyTargets.size();
-								achievementObserver.playerAchievements[i].bountyTargets.insert(bountyTargets[index]->getUID());
-								bountyTargets.erase(bountyTargets.begin() + index);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	updateClientBounties(true);
 }
 
 bool AchievementObserver::addEntityAchievementTimer(Entity* entity, int achievement, int ticks, bool resetTimerIfActive, int optionalIncrement)
@@ -5018,60 +4821,6 @@ void AchievementObserver::checkMapScriptsOnVariableSet()
 	}
 }
 
-std::map<ItemType, Uint32> dapperItems;
-std::set<ItemType> AchievementObserver::PlayerAchievements::startingClassItems =
-{
-	LEATHER_HELM,
-	HAT_PHRYGIAN,
-	HAT_HOOD_WHISPERS,
-	HAT_WIZARD,
-	HAT_HOOD_APPRENTICE,
-	HAT_JESTER,
-	HAT_FEZ,
-	HAT_HOOD_ASSASSIN,
-	MONOCLE,
-	MASK_BANDIT,
-	PUNISHER_HOOD,
-	MASK_SHAMAN,
-	TOOL_BLINDFOLD_TELEPATHY,
-	TOOL_BLINDFOLD
-};
-
-int AchievementObserver::PlayerAchievements::getItemIndexForDapperAchievement(Item* item)
-{
-	if ( dapperItems.empty() )
-	{
-		int index = 0;
-		for ( int i = 0; i < NUMITEMS; ++i )
-		{
-			if ( startingClassItems.find((ItemType)i) != startingClassItems.end() )
-			{
-				continue;
-			}
-			if ( items[i].item_slot == EQUIPPABLE_IN_SLOT_HELM )
-			{
-				dapperItems[(ItemType)i] = index;
-				++index;
-			}
-			else if ( items[i].item_slot == EQUIPPABLE_IN_SLOT_MASK )
-			{
-				dapperItems[(ItemType)i] = index;
-				++index;
-			}
-		}
-	}
-
-	if ( item )
-	{
-		auto find = dapperItems.find(item->type);
-		if ( find != dapperItems.end() )
-		{
-			return find->second;
-		}
-	}
-	return -1;
-}
-
 void AchievementObserver::updatePlayerAchievement(int player, Achievement achievement, AchievementEvent achEvent)
 {
 	switch ( achievement )
@@ -5173,61 +4922,6 @@ void AchievementObserver::updatePlayerAchievement(int player, Achievement achiev
 				}
 			}
 			break;
-		case BARONY_ACH_DAPPER:
-		{
-
-			int loops = 2;
-			SteamStatIndexes statLevelTotal = STEAM_STAT_DAPPER;
-			while ( loops > 0 )
-			{
-				--loops;
-				int index = playerAchievements[player].getItemIndexForDapperAchievement(loops == 1 ? stats[player]->helmet : stats[player]->mask);
-				if ( index >= 0 )
-				{
-					SteamStatIndexes statBitCounter = STEAM_STAT_DAPPER_1;
-					if ( index >= 32 )
-					{
-						statBitCounter = STEAM_STAT_DAPPER_2;
-					}
-					else if ( index >= 64 )
-					{
-						statBitCounter = STEAM_STAT_DAPPER_3;
-					}
-				
-					Uint32 bit = (1 << (index % 32));
-					if ( !(g_SteamStats[statBitCounter].m_iValue & (bit)) ) // bit not set
-					{
-						// update with the difference in values.
-						steamStatisticUpdate(statBitCounter, STEAM_STAT_INT, (bit));
-					}
-				}
-			}
-
-			if ( ticks % (TICKS_PER_SECOND * 5) == 0 )
-			{
-				int hatmasksWorn = 0;
-				for ( int i = 0; i < 32; ++i )
-				{
-					if ( g_SteamStats[STEAM_STAT_DAPPER_1].m_iValue & (1 << i) ) // count the bits
-					{
-						++hatmasksWorn;
-					}
-					if ( g_SteamStats[STEAM_STAT_DAPPER_2].m_iValue & (1 << i) ) // count the bits
-					{
-						++hatmasksWorn;
-					}
-					if ( g_SteamStats[STEAM_STAT_DAPPER_3].m_iValue & (1 << i) ) // count the bits
-					{
-						++hatmasksWorn;
-					}
-				}
-				if ( hatmasksWorn >= g_SteamStats[statLevelTotal].m_iValue )
-				{
-					steamStatisticUpdate(statLevelTotal, STEAM_STAT_INT, hatmasksWorn - g_SteamStats[statLevelTotal].m_iValue);
-				}
-			}
-			break;
-		}
 		case BARONY_ACH_REAL_BOY:
 			if ( achEvent == REAL_BOY_HUMAN_RECRUIT )
 			{
@@ -5268,8 +4962,6 @@ void AchievementObserver::updatePlayerAchievement(int player, Achievement achiev
 		{
 			std::unordered_set<int> races;
 			std::unordered_set<int> classes;
-			std::vector<int> awardAchievementsToAllPlayers;
-			int num = 0;
 			for ( int i = 0; i < MAXPLAYERS; ++i )
 			{
 				if ( !client_disconnected[i] )
@@ -5282,13 +4974,9 @@ void AchievementObserver::updatePlayerAchievement(int player, Achievement achiev
 					{
 						classes.insert(client_classes[i]);
 					}
-					++num;
 				}
 			}
-			if ( gameModeManager.currentSession.challengeRun.isActive() && num >= 2 )
-			{
-				awardAchievementsToAllPlayers.push_back(BARONY_ACH_SPROUTS);
-			}
+			std::vector<int> awardAchievementsToAllPlayers;
 			if ( !races.empty() )
 			{
 				if ( races.find(RACE_INCUBUS) != races.end() && races.find(RACE_SUCCUBUS) != races.end() )
@@ -5351,11 +5039,8 @@ void AchievementObserver::updatePlayerAchievement(int player, Achievement achiev
 #endif
 }
 
-bool AchievementObserver::PlayerAchievements::allPlayersDeadEvent = false;
-
 void AchievementObserver::clearPlayerAchievementData()
 {
-	PlayerAchievements::allPlayersDeadEvent = false;
 	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
 		playerAchievements[i].caughtInAMosh = false;
@@ -5384,11 +5069,6 @@ void AchievementObserver::clearPlayerAchievementData()
 		playerAchievements[i].flutterShyCoordinates = std::make_pair(0.0, 0.0);
 		playerAchievements[i].gastricBypassSpell = std::make_pair(0, 0);
 		playerAchievements[i].rat5000secondRule.clear();
-		playerAchievements[i].phantomMaskFirstStrikes.clear();
-		playerAchievements[i].bountyTargets.clear();
-		playerAchievements[i].updatedBountyTargets = false;
-		playerAchievements[i].wearingBountyHat = false;
-		playerAchievements[i].totalKillsTickUpdate = false;
 	}
 }
 
@@ -5456,9 +5136,6 @@ void AchievementObserver::awardAchievement(int player, int achievement)
 			break;
 		case BARONY_ACH_IRONIC_PUNISHMENT:
 			steamAchievementClient(player, "BARONY_ACH_IRONIC_PUNISHMENT");
-			break;
-		case BARONY_ACH_SPROUTS:
-			steamAchievementClient(player, "BARONY_ACH_SPROUTS");
 			break;
 		default:
 			messagePlayer(player, MESSAGE_DEBUG, "[WARNING]: Unhandled achievement: %d", achievement);
@@ -5712,10 +5389,10 @@ void SaveGameInfo::computeHash(const int playernum, Uint32& hash)
 		hash += (Uint32)((Uint32)k << (shift % 32)); ++shift;
 	}
 
-	hash += (Uint32)((Uint32)player.conductPenniless << (shift % 32)); ++shift;
-	hash += (Uint32)((Uint32)player.conductFoodless << (shift % 32)); ++shift;
-	hash += (Uint32)((Uint32)player.conductVegetarian << (shift % 32)); ++shift;
-	hash += (Uint32)((Uint32)player.conductIlliterate << (shift % 32)); ++shift;
+	hash += (Uint32)((Uint32)conductPenniless << (shift % 32)); ++shift;
+	hash += (Uint32)((Uint32)conductFoodless << (shift % 32)); ++shift;
+	hash += (Uint32)((Uint32)conductVegetarian << (shift % 32)); ++shift;
+	hash += (Uint32)((Uint32)conductIlliterate << (shift % 32)); ++shift;
 	for ( int i = 0; i < NUM_CONDUCT_CHALLENGES; ++i )
 	{
 		hash += (Uint32)((Uint32)player.additionalConducts[i] << (shift % 32)); ++shift;
@@ -5806,12 +5483,6 @@ void SaveGameInfo::computeHash(const int playernum, Uint32& hash)
 			}
 		}
 	}
-
-	for ( auto& pair : additional_data )
-	{
-		hash += djb2Hash(const_cast<char*>(pair.first.c_str()));
-		hash += djb2Hash(const_cast<char*>(pair.second.c_str()));
-	}
 }
 
 void SaveGameInfo::Player::stat_t::item_t::computeHash(Uint32& hash, Uint32& shift)
@@ -5840,7 +5511,7 @@ int SaveGameInfo::populateFromSession(const int playernum)
 
 	// savefile hash
 	info->hash = tm->tm_hour + tm->tm_mday * tm->tm_year + tm->tm_wday + tm->tm_yday;
-	if ( info->game_version < 410 )
+	if ( info->game_version < 100 )
 	{
 		info->hash += stats[playernum]->STR + stats[playernum]->LVL + stats[playernum]->DEX * stats[playernum]->INT;
 		info->hash += stats[playernum]->CON * stats[playernum]->PER + std::min(stats[playernum]->GOLD, 5000) - stats[playernum]->CON;
@@ -5851,7 +5522,6 @@ int SaveGameInfo::populateFromSession(const int playernum)
 	// game info
 	info->gamename = stats[playernum]->name;
 	info->gamekey = ::uniqueGameKey;
-	info->lobbykey = ::uniqueLobbyKey;
 	info->mapseed = ::mapseed;
 	info->customseed = gameModeManager.currentSession.seededRun.seed;
 	info->customseed_string = gameModeManager.currentSession.seededRun.seedString;
@@ -6026,7 +5696,7 @@ int SaveGameInfo::populateFromSession(const int playernum)
 			player.stats.HUNGER = stats[c]->HUNGER;
 			player.stats.PROFICIENCIES.resize(NUMPROFICIENCIES);
 			for ( int i = 0; i < NUMPROFICIENCIES; ++i ) {
-				player.stats.PROFICIENCIES[i] = stats[c]->getProficiency(i);
+				player.stats.PROFICIENCIES[i] = stats[c]->PROFICIENCIES[i];
 			}
 			player.stats.EFFECTS.resize(NUMEFFECTS);
 			player.stats.EFFECTS_TIMERS.resize(NUMEFFECTS);
@@ -6046,9 +5716,6 @@ int SaveGameInfo::populateFromSession(const int playernum)
 				auto& h2 = player.shopkeeperHostility.at(player.shopkeeperHostility.size() - 1);
 				h2.second.wantedLevel = h.second.wantedLevel;
 				h2.second.playerRace = h.second.playerRace;
-				h2.second.sex = h.second.sex;
-				h2.second.equipment = h.second.equipment;
-				h2.second.type = h.second.type;
 				h2.second.player = h.second.player;
 				h2.second.numKills = h.second.numKills;
 				h2.second.numAggressions = h.second.numAggressions;
@@ -6165,7 +5832,7 @@ int SaveGameInfo::populateFromSession(const int playernum)
 					stats.HUNGER = follower->HUNGER;
 					stats.PROFICIENCIES.resize(NUMPROFICIENCIES);
 					for ( int i = 0; i < NUMPROFICIENCIES; ++i ) {
-						stats.PROFICIENCIES[i] = follower->getProficiency(i);
+						stats.PROFICIENCIES[i] = follower->PROFICIENCIES[i];
 					}
 					stats.EFFECTS.resize(NUMEFFECTS);
 					stats.EFFECTS_TIMERS.resize(NUMEFFECTS);
@@ -6235,12 +5902,8 @@ int SaveGameInfo::populateFromSession(const int playernum)
 	}
 
 	info->map_messages = ::Player::Minimap_t::mapDetails;
-	if ( gameModeManager.currentSession.challengeRun.isActive() )
-	{
-		info->additional_data.push_back(std::make_pair("game_scenario", gameModeManager.currentSession.challengeRun.scenarioStr));
-	}
 
-	if ( info->game_version >= 410 )
+	if ( info->game_version >= 100 )
 	{
 		info->computeHash(info->player_num, info->hash);
 	}
@@ -6301,15 +5964,7 @@ int SaveGameInfo::getTotalScore(const int playernum, const int victory)
 	}
 
 	amount += this->dungeon_lvl * 500;
-	if ( victory == 100 )
-	{
-		amount += 2 * 20000;
-	}
-	else if ( victory == 101 )
-	{
-		amount += 5 * 20000;
-	}
-	else if ( victory >= 3 )
+	if ( victory >= 3 )
 	{
 		amount += 3 * 20000;
 	}
@@ -6367,28 +6022,8 @@ std::string SaveGameInfo::serializeToOnlineHiscore(const int playernum, const in
 
 	Uint32 gametimer = std::min(this->gametimer, (Uint32)0xFFFFFF);
 
-	std::string lid = "lid";
-	int lid_version = 0;
-	int challengeEventSave = 0;
-	for ( auto& pair : additional_data )
-	{
-		if ( pair.first == "game_scenario" )
-		{
-			GameModeManager_t::CurrentSession_t::ChallengeRun_t run;
-			run.setup(pair.second);
-			if ( run.isActive() )
-			{
-				lid = run.lid;
-				lid_version = run.lid_version;
-			}
-			break;
-		}
-	}
-
 	character.AddMember("version", rapidjson::Value(1), d.GetAllocator());
-	character.AddMember("game_ver", rapidjson::Value(VERSION, d.GetAllocator()), d.GetAllocator());
-	character.AddMember("leaderboard", rapidjson::Value(lid.c_str(), d.GetAllocator()), d.GetAllocator());
-	character.AddMember("leaderboard_version", rapidjson::Value(lid_version), d.GetAllocator());
+	character.AddMember("leaderboard", rapidjson::Value("lid", d.GetAllocator()), d.GetAllocator());
 	character.AddMember("time", rapidjson::Value(gametimer), d.GetAllocator());
 	character.AddMember("totalscore", rapidjson::Value(getTotalScore(playernum, victory)), d.GetAllocator());
 	character.AddMember("seed", rapidjson::Value(customseed), d.GetAllocator());
@@ -6411,7 +6046,7 @@ std::string SaveGameInfo::serializeToOnlineHiscore(const int playernum, const in
 
 	{
 		rapidjson::Value statsObj(rapidjson::kObjectType);
-		//statsObj.AddMember("name", rapidjson::Value(myStats.name.c_str(), d.GetAllocator()), d.GetAllocator());
+		statsObj.AddMember("name", rapidjson::Value(myStats.name.c_str(), d.GetAllocator()), d.GetAllocator());
 		statsObj.AddMember("MAXHP", myStats.maxHP, d.GetAllocator());
 		statsObj.AddMember("MAXMP", myStats.maxMP, d.GetAllocator());
 		statsObj.AddMember("STR", myStats.STR, d.GetAllocator());
@@ -6555,7 +6190,6 @@ int loadGame(int player, const SaveGameInfo& info) {
 
 	// load game info
 	uniqueGameKey = info.gamekey;
-	uniqueLobbyKey = info.lobbykey;
 	mapseed = info.mapseed;
 	completionTime = info.gametimer;
 	clientnum = info.player_num;
@@ -6591,28 +6225,6 @@ int loadGame(int player, const SaveGameInfo& info) {
 			printlog("[SESSION]: Using savegame server flags");
 			gameModeManager.currentSession.seededRun.seed = info.customseed;
 			gameModeManager.currentSession.seededRun.seedString = info.customseed_string;
-			for ( auto& pair : info.additional_data )
-			{
-				if ( pair.first == "game_scenario" )
-				{
-					gameModeManager.currentSession.challengeRun.setup(pair.second);
-					if ( gameModeManager.currentSession.challengeRun.isActive() )
-					{
-						if ( gameModeManager.currentSession.challengeRun.lid.find("oneshot") != std::string::npos )
-						{
-							gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN_ONESHOT);
-						}
-						else if ( gameModeManager.currentSession.challengeRun.lid.find("unlimited") != std::string::npos )
-						{
-							gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN);
-						}
-						else if ( gameModeManager.currentSession.challengeRun.lid.find("challenge") != std::string::npos )
-						{
-							gameModeManager.setMode(GameModeManager_t::GAME_MODE_CUSTOM_RUN);
-						}
-					}
-				}
-			}
 		}
 	}
 
@@ -6691,20 +6303,11 @@ int loadGame(int player, const SaveGameInfo& info) {
 	stats[statsPlayer]->GOLD = p.GOLD;
 	stats[statsPlayer]->HUNGER = p.HUNGER;
 	for (int c = 0; c < NUMPROFICIENCIES && c < p.PROFICIENCIES.size(); ++c) {
-		stats[statsPlayer]->setProficiency(c, p.PROFICIENCIES[c]);
+		stats[statsPlayer]->PROFICIENCIES[c] = p.PROFICIENCIES[c];
 	}
-
-	for (int c = 0; c < NUMEFFECTS; ++c) {
-		if ( c < p.EFFECTS.size() )
-		{
-			stats[statsPlayer]->EFFECTS[c] = p.EFFECTS[c];
-			stats[statsPlayer]->EFFECTS_TIMERS[c] = p.EFFECTS_TIMERS[c];
-		}
-		else
-		{
-			stats[statsPlayer]->EFFECTS[c] = 0;
-			stats[statsPlayer]->EFFECTS_TIMERS[c] = 0;
-		}
+	for (int c = 0; c < NUMEFFECTS && c < p.EFFECTS.size(); ++c) {
+		stats[statsPlayer]->EFFECTS[c] = p.EFFECTS[c];
+		stats[statsPlayer]->EFFECTS_TIMERS[c] = p.EFFECTS_TIMERS[c];
 	}
 	constexpr int NUMMISCFLAGS = sizeof(Stat::MISC_FLAGS) / sizeof(Stat::MISC_FLAGS[0]);
 	for (int c = 0; c < NUMMISCFLAGS && c < p.MISC_FLAGS.size(); ++c) {
@@ -6853,43 +6456,19 @@ int loadGame(int player, const SaveGameInfo& info) {
 	    }
 	}
 
-	// generate mimics
-	{
-		mimic_generator.init();
-	}
-
 	// shopkeeper hostility
 	{
 		auto& h = ShopkeeperPlayerHostility.playerHostility[statsPlayer];
 		h.clear();
 		for ( auto& hostility : info.players[player].shopkeeperHostility )
 		{
-			h[(Uint32)hostility.first] = ShopkeeperPlayerHostility_t::PlayerRaceHostility_t();
-			h[(Uint32)hostility.first].wantedLevel = (ShopkeeperPlayerHostility_t::WantedLevel)hostility.second.wantedLevel;
-			if ( info.game_version < 412 )
-			{
-				if ( h[(Uint32)hostility.first].wantedLevel > ShopkeeperPlayerHostility_t::NO_WANTED_LEVEL )
-				{
-					// we increased the wanted levels in 412
-					h[(Uint32)hostility.first].wantedLevel = 
-						(ShopkeeperPlayerHostility_t::WantedLevel)(h[(Uint32)hostility.first].wantedLevel + 1);
-				}
-			}
-			h[(Uint32)hostility.first].playerRace = (Monster)hostility.second.playerRace;
-			if ( info.game_version < 412 )
-			{
-				h[(Uint32)hostility.first].type = h[(Uint32)hostility.first].playerRace;
-			}
-			else
-			{
-				h[(Uint32)hostility.first].sex = (sex_t)hostility.second.sex;
-				h[(Uint32)hostility.first].equipment = (Uint8)hostility.second.equipment;
-				h[(Uint32)hostility.first].type = (Uint32)hostility.second.type;
-			}
-			h[(Uint32)hostility.first].player = hostility.second.player;
-			h[(Uint32)hostility.first].numAggressions = hostility.second.numAggressions;
-			h[(Uint32)hostility.first].numKills = hostility.second.numKills;
-			h[(Uint32)hostility.first].numAccessories = hostility.second.numAccessories;
+			h[(Monster)hostility.first] = ShopkeeperPlayerHostility_t::PlayerRaceHostility_t();
+			h[(Monster)hostility.first].wantedLevel = (ShopkeeperPlayerHostility_t::WantedLevel)hostility.second.wantedLevel;
+			h[(Monster)hostility.first].playerRace = (Monster)hostility.second.playerRace;
+			h[(Monster)hostility.first].player = hostility.second.player;
+			h[(Monster)hostility.first].numAggressions = hostility.second.numAggressions;
+			h[(Monster)hostility.first].numKills = hostility.second.numKills;
+			h[(Monster)hostility.first].numAccessories = hostility.second.numAccessories;
 		}
 	}
 
@@ -6969,19 +6548,11 @@ list_t* loadGameFollowers(const SaveGameInfo& info) {
 			stats->GOLD = follower.GOLD;
 			stats->HUNGER = follower.HUNGER;
 			for (int c = 0; c < NUMPROFICIENCIES && c < follower.PROFICIENCIES.size(); ++c) {
-				stats->setProficiency(c, follower.PROFICIENCIES[c]);
+				stats->PROFICIENCIES[c] = follower.PROFICIENCIES[c];
 			}
-			for (int c = 0; c < NUMEFFECTS; ++c) {
-				if ( c < follower.EFFECTS.size() )
-				{
-					stats->EFFECTS[c] = follower.EFFECTS[c];
-					stats->EFFECTS_TIMERS[c] = follower.EFFECTS_TIMERS[c];
-				}
-				else
-				{
-					stats->EFFECTS[c] = 0;
-					stats->EFFECTS_TIMERS[c] = 0;
-				}
+			for (int c = 0; c < NUMEFFECTS && c < follower.EFFECTS.size(); ++c) {
+				stats->EFFECTS[c] = follower.EFFECTS[c];
+				stats->EFFECTS_TIMERS[c] = follower.EFFECTS_TIMERS[c];
 			}
 			constexpr int NUMMISCFLAGS = sizeof(Stat::MISC_FLAGS) / sizeof(Stat::MISC_FLAGS[0]);
 			for (int c = 0; c < NUMMISCFLAGS && c < follower.MISC_FLAGS.size(); ++c) {
@@ -7046,131 +6617,3 @@ list_t* loadGameFollowers(const SaveGameInfo& info) {
 
 	return followers;
 } 
-
-int SaveGameInfo::Player::isCharacterValidFromDLC()
-{
-	switch ( this->char_class )
-	{
-	case CLASS_CONJURER:
-	case CLASS_ACCURSED:
-	case CLASS_MESMER:
-	case CLASS_BREWER:
-		if ( !enabledDLCPack1 )
-		{
-			return INVALID_REQUIREDLC1;
-		}
-		break;
-	case CLASS_MACHINIST:
-	case CLASS_PUNISHER:
-	case CLASS_SHAMAN:
-	case CLASS_HUNTER:
-		if ( !enabledDLCPack2 )
-		{
-			return INVALID_REQUIREDLC2;
-		}
-		break;
-	default:
-		break;
-	}
-
-	switch ( this->race )
-	{
-	case RACE_SKELETON:
-	case RACE_VAMPIRE:
-	case RACE_SUCCUBUS:
-	case RACE_GOATMAN:
-		if ( !enabledDLCPack1 )
-		{
-			return INVALID_REQUIREDLC1;
-		}
-		break;
-	case RACE_AUTOMATON:
-	case RACE_INCUBUS:
-	case RACE_GOBLIN:
-	case RACE_INSECTOID:
-		if ( !enabledDLCPack2 )
-		{
-			return INVALID_REQUIREDLC2;
-		}
-		break;
-	default:
-		break;
-	}
-
-	if ( this->race == RACE_HUMAN )
-	{
-		return VALID_OK_CHARACTER;
-	}
-	else if ( this->race > RACE_HUMAN && this->stats.appearance == 1 )
-	{
-		return VALID_OK_CHARACTER; // aesthetic only option.
-	}
-	if ( this->char_class <= CLASS_MONK )
-	{
-		return VALID_OK_CHARACTER;
-	}
-
-	switch ( this->char_class )
-	{
-	case CLASS_CONJURER:
-		if ( this->race == RACE_SKELETON )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_SKELETON) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_ACCURSED:
-		if ( this->race == RACE_VAMPIRE )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_VAMPIRE) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_MESMER:
-		if ( this->race == RACE_SUCCUBUS )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_SUCCUBUS) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_BREWER:
-		if ( this->race == RACE_GOATMAN )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_GOATMAN) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_MACHINIST:
-		if ( this->race == RACE_AUTOMATON )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_AUTOMATON) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_PUNISHER:
-		if ( this->race == RACE_INCUBUS )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_INCUBUS) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_SHAMAN:
-		if ( this->race == RACE_GOBLIN )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_GOBLIN) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	case CLASS_HUNTER:
-		if ( this->race == RACE_INSECTOID )
-		{
-			return VALID_OK_CHARACTER;
-		}
-		return isAchievementUnlockedForClassUnlock(RACE_INSECTOID) ? VALID_OK_CHARACTER : INVALID_REQUIRE_ACHIEVEMENT;
-		break;
-	default:
-		break;
-	}
-
-	return INVALID_CHARACTER;
-}

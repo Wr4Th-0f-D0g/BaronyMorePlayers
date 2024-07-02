@@ -237,7 +237,6 @@ TileEntityListHandler TileEntityList;
 // undefine SOUND, MUSIC (see sound.h)
 int game = 1;
 Uint32 uniqueGameKey = 0;
-Uint32 uniqueLobbyKey = 0;
 DebugStatsClass DebugStats;
 Uint32 networkTickrate = 0;
 bool gameloopFreezeEntities = false;
@@ -1485,12 +1484,6 @@ void gameLogic(void)
 						steamAchievementClient(c, "BARONY_ACH_GILDED");
 					}
 
-					if ( stats[c]->helmet && stats[c]->helmet->type == HAT_WOLF_HOOD
-						&& stats[c]->helmet->beatitude > 0 )
-					{
-						steamAchievementClient(c, "BARONY_ACH_PET_DA_DOG");
-					}
-
 					if ( stats[c]->helmet && stats[c]->helmet->type == ARTIFACT_HELM
 						&& stats[c]->breastplate && stats[c]->breastplate->type == ARTIFACT_BREASTPIECE
 						&& stats[c]->gloves && stats[c]->gloves->type == ARTIFACT_GLOVES
@@ -1503,10 +1496,8 @@ void gameLogic(void)
 					if ( stats[c]->type == SKELETON 
 						&& stats[c]->weapon && stats[c]->weapon->type == ARTIFACT_AXE
 						&& stats[c]->cloak && stats[c]->cloak->type == CLOAK_PROTECTION
-						&& ((stats[c]->mask && stats[c]->mask->type == MASK_EYEPATCH) || !stats[c]->mask)
-						&& !stats[c]->helmet
-						&& !stats[c]->gloves && !stats[c]->shoes
-						&& !stats[c]->breastplate && !stats[c]->ring
+						&& !stats[c]->gloves && !stats[c]->helmet && !stats[c]->shoes
+						&& !stats[c]->breastplate && !stats[c]->mask && !stats[c]->ring
 						&& !stats[c]->amulet && !stats[c]->shield )
 					{
 						// nothing but an axe and a cloak.
@@ -1636,7 +1627,6 @@ void gameLogic(void)
 				gameplayPreferences[i].process();
 			}
 			updatePlayerConductsInMainLoop();
-			achievementObserver.updatePlayerAchievement(clientnum, AchievementObserver::BARONY_ACH_DAPPER, AchievementObserver::DAPPER_EQUIPMENT_CHECK);
 
 			//if( TICKS_PER_SECOND )
 			//generatePathMaps();
@@ -1987,6 +1977,15 @@ void gameLogic(void)
 						}
 					}
 
+					// signal clients about level change
+					mapseed = local_rng.rand();
+					lastEntityUIDs = entity_uids;
+					if ( forceMapSeed > 0 )
+					{
+						mapseed = forceMapSeed;
+						forceMapSeed = 0;
+					}
+
 					bool loadingTheSameFloorAsCurrent = false;
 					if ( skipLevelsOnLoad > 0 )
 					{
@@ -2005,29 +2004,6 @@ void gameLogic(void)
 						++currentlevel;
 					}
 					skipLevelsOnLoad = 0;
-
-					// signal clients about level change
-					if ( gameModeManager.currentSession.seededRun.seed == 0 )
-					{
-						mapseed = local_rng.rand();
-					}
-					else
-					{
-						map_sequence_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
-						int rng_cycles = std::max(0, currentlevel + (secretlevel ? 100 : 0));
-						while ( rng_cycles > 0 )
-						{
-							map_sequence_rng.rand(); // dummy advance
-							--rng_cycles;
-						}
-						mapseed = map_sequence_rng.rand();
-					}
-					lastEntityUIDs = entity_uids;
-					if ( forceMapSeed > 0 )
-					{
-						mapseed = forceMapSeed;
-						forceMapSeed = 0;
-					}
 
 					if ( !secretlevel )
 					{
@@ -2813,56 +2789,6 @@ void gameLogic(void)
 			{
 				steamAchievement("BARONY_ACH_HOMICIDAL_MANIAC");
 			}
-
-
-			if ( gameModeManager.currentSession.challengeRun.isActive()
-				&& (gameModeManager.currentSession.challengeRun.eventType == gameModeManager.currentSession.challengeRun.CHEVENT_KILLS_MONSTERS
-					|| gameModeManager.currentSession.challengeRun.eventType == gameModeManager.currentSession.challengeRun.CHEVENT_KILLS_FURNITURE)
-				&& gameModeManager.currentSession.challengeRun.numKills >= 0 )
-			{
-				/*if ( gameStatistics[STATISTICS_TOTAL_KILLS] >= gameModeManager.currentSession.challengeRun.numKills
-					&& achievementObserver.playerAchievements[PLAYER_NUM].totalKillsTickUpdate )
-				{
-					my->setHP(0);
-					my->setObituary(Language::get(6152));
-					stats[PLAYER_NUM]->killer = KilledBy::FAILED_CHALLENGE;
-				}*/
-				if ( gameStatistics[STATISTICS_TOTAL_KILLS] >= gameModeManager.currentSession.challengeRun.numKills
-					&& achievementObserver.playerAchievements[clientnum].totalKillsTickUpdate )
-				{
-					if ( !fadeout )
-					{
-						victory = 100;
-						if ( gameModeManager.currentSession.challengeRun.eventType == gameModeManager.currentSession.challengeRun.CHEVENT_KILLS_FURNITURE )
-						{
-							victory = 101;
-						}
-						if ( multiplayer == SERVER )
-						{
-							for ( int c = 1; c < MAXPLAYERS; c++ )
-							{
-								if ( client_disconnected[c] == true || players[c]->isLocalPlayer() )
-								{
-									continue;
-								}
-								strcpy((char*)net_packet->data, "WING");
-								net_packet->data[4] = victory;
-								net_packet->data[5] = 0;
-								net_packet->address.host = net_clients[c - 1].host;
-								net_packet->address.port = net_clients[c - 1].port;
-								net_packet->len = 6;
-								sendPacketSafe(net_sock, -1, net_packet, c - 1);
-							}
-						}
-						movie = true;
-						pauseGame(2, 0);
-						MainMenu::destroyMainMenu();
-						MainMenu::createDummyMainMenu();
-						beginFade(MainMenu::FadeDestination::Endgame);
-					}
-				}
-			}
-			achievementObserver.playerAchievements[clientnum].totalKillsTickUpdate = false;
 		}
 		else if ( multiplayer == CLIENT )
 		{
@@ -3003,13 +2929,11 @@ void gameLogic(void)
 				updateGameplayStatisticsInMainLoop();
 			}
 
-
 			for ( int i = 0; i < MAXPLAYERS; ++i )
 			{
 				gameplayPreferences[i].process();
 			}
 			updatePlayerConductsInMainLoop();
-			achievementObserver.updatePlayerAchievement(clientnum, AchievementObserver::BARONY_ACH_DAPPER, AchievementObserver::DAPPER_EQUIPMENT_CHECK);
 
 			// ask for entity delete update
 			if ( ticks % 4 == 0 && list_Size(map.entities) )
@@ -3664,7 +3588,7 @@ static void bindControllerToPlayer(int id, int player) {
     inputs.getVirtualMouse(player)->draw_cursor = false;
     inputs.getVirtualMouse(player)->lastMovementFromController = true;
     printlog("(Device %d bound to player %d)", id, player);
-    for (int c = 0; c < 4; ++c) {
+    for (int c = 0; c < 8; ++c) {
         auto& input = Input::inputs[c];
 	    input.refresh();
     }
@@ -4521,7 +4445,7 @@ bool handleEvents(void)
 					printlog("Device %d successfully initialized as game controller in slot %d.\n", sdl_device_index, id);
 					controller.initBindings();
 					Input::gameControllers[id] = controller.getControllerDevice();
-					for (int c = 0; c < 4; ++c) {
+					for (int c = 0; c < 8; ++c) {
 						Input::inputs[c].refresh();
 					}
 					break;
@@ -4564,7 +4488,7 @@ bool handleEvents(void)
 						printlog("Device %d removed as game controller (it was in slot %d).\n", instanceID, id);
 						controller.close();
 						Input::gameControllers.erase(id);
-						for ( int c = 0; c < 4; ++c ) {
+						for ( int c = 0; c < 8; ++c ) {
 							Input::inputs[c].refresh();
 						}
 					}
@@ -4596,7 +4520,7 @@ bool handleEvents(void)
 					printlog(" NumAxes: %d", SDL_JoystickNumAxes(joystick));
 					printlog(" NumButtons: %d", SDL_JoystickNumButtons(joystick));
 					printlog(" NumHats: %d", SDL_JoystickNumHats(joystick));
-					for (int c = 0; c < 4; ++c) {
+					for (int c = 0; c < 8; ++c) {
 						Input::inputs[c].refresh();
 					}
 				}
@@ -4684,7 +4608,7 @@ bool handleEvents(void)
 							index = pair.first;
 							printlog("Removed joystick with device index (%d), instance id (%d)", index, event.jdevice.which);
 							Input::joysticks.erase(index);
-							for ( int c = 0; c < 4; ++c ) {
+							for ( int c = 0; c < 8; ++c ) {
 								Input::inputs[c].refresh();
 							}
 							break;
@@ -7012,7 +6936,6 @@ int main(int argc, char** argv)
 						// generate unique game key
 						local_rng.seedTime();
 						local_rng.getSeed(&uniqueGameKey, sizeof(uniqueGameKey));
-						uniqueLobbyKey = local_rng.getU32();
 						net_rng.seedBytes(&uniqueGameKey, sizeof(uniqueGameKey));
 						doNewGame(false);
 					}
